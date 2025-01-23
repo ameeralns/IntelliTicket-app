@@ -1,8 +1,9 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useMemo } from 'react';
 import Link from 'next/link';
 import { Clock, Tag, MessageSquare } from 'lucide-react';
+import { subDays } from 'date-fns';
 
 interface Agent {
   name: string;
@@ -46,22 +47,57 @@ interface Ticket {
 
 interface TicketListProps {
   tickets: Ticket[];
+  filters?: {
+    status: string[];
+    priority: string[];
+    dateRange: 'all' | 'week' | 'month' | 'year';
+  };
 }
 
-export default function TicketList({ tickets }: TicketListProps) {
+export default function TicketList({ tickets, filters = { status: [], priority: [], dateRange: 'all' } }: TicketListProps) {
   const [sortBy, setSortBy] = useState<'created_at' | 'priority' | 'status'>('created_at');
   const [sortOrder, setSortOrder] = useState<'asc' | 'desc'>('desc');
 
-  const sortedTickets = [...tickets].sort((a, b) => {
-    if (sortBy === 'created_at') {
-      return sortOrder === 'desc' 
-        ? new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
-        : new Date(a.created_at).getTime() - new Date(b.created_at).getTime();
+  const filteredAndSortedTickets = useMemo(() => {
+    // First, apply filters
+    let filtered = [...tickets];
+
+    // Apply status filter
+    if (filters.status.length > 0) {
+      filtered = filtered.filter(ticket => filters.status.includes(ticket.status));
     }
-    return sortOrder === 'desc'
-      ? b[sortBy].localeCompare(a[sortBy])
-      : a[sortBy].localeCompare(b[sortBy]);
-  });
+
+    // Apply priority filter
+    if (filters.priority.length > 0) {
+      filtered = filtered.filter(ticket => filters.priority.includes(ticket.priority));
+    }
+
+    // Apply date range filter
+    if (filters.dateRange !== 'all') {
+      const now = new Date();
+      const cutoffDate = subDays(now, {
+        week: 7,
+        month: 30,
+        year: 365
+      }[filters.dateRange]);
+
+      filtered = filtered.filter(ticket => 
+        new Date(ticket.created_at) >= cutoffDate
+      );
+    }
+
+    // Then, sort the filtered results
+    return filtered.sort((a, b) => {
+      if (sortBy === 'created_at') {
+        return sortOrder === 'desc' 
+          ? new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
+          : new Date(a.created_at).getTime() - new Date(b.created_at).getTime();
+      }
+      return sortOrder === 'desc'
+        ? b[sortBy].localeCompare(a[sortBy])
+        : a[sortBy].localeCompare(b[sortBy]);
+    });
+  }, [tickets, filters, sortBy, sortOrder]);
 
   const statusColors = {
     New: 'bg-blue-500',
@@ -101,7 +137,7 @@ export default function TicketList({ tickets }: TicketListProps) {
 
       {/* Tickets */}
       <div className="space-y-4">
-        {sortedTickets.map((ticket) => (
+        {filteredAndSortedTickets.map((ticket) => (
           <Link
             key={ticket.ticket_id}
             href={`/dashboard/customer/tickets/${ticket.ticket_id}`}
@@ -173,7 +209,7 @@ export default function TicketList({ tickets }: TicketListProps) {
           </Link>
         ))}
 
-        {tickets.length === 0 && (
+        {filteredAndSortedTickets.length === 0 && (
           <div className="text-center py-8">
             <p className="text-gray-400">No tickets found</p>
           </div>

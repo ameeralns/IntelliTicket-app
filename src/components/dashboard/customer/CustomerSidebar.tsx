@@ -1,7 +1,7 @@
 'use client';
 
 import Link from 'next/link';
-import { Home, Ticket, Plus, BookOpen, Settings, HelpCircle } from 'lucide-react';
+import { Home, Ticket, Plus, BookOpen, Settings, HelpCircle, User } from 'lucide-react';
 
 interface CustomerSidebarProps {
   customerData: {
@@ -17,6 +17,7 @@ export default function CustomerSidebar({ customerData }: CustomerSidebarProps) 
     { icon: Ticket, label: 'My Tickets', href: '/dashboard/customer/tickets' },
     { icon: Plus, label: 'New Ticket', href: '/dashboard/customer/tickets/new' },
     { icon: BookOpen, label: 'Knowledge Base', href: '/dashboard/customer/knowledge' },
+    { icon: User, label: 'Profile', href: '/dashboard/customer/profile' },
     { icon: Settings, label: 'Settings', href: '/dashboard/customer/settings' },
     { icon: HelpCircle, label: 'Help & Support', href: '/dashboard/customer/help' },
   ];
@@ -28,8 +29,10 @@ export default function CustomerSidebar({ customerData }: CustomerSidebarProps) 
         <div className="h-12 w-12 rounded-full bg-gray-600 flex items-center justify-center text-xl mb-4">
           {customerData?.name?.charAt(0) || 'U'}
         </div>
-        <h3 className="font-semibold text-lg">{customerData?.name || 'User'}</h3>
-        <p className="text-sm text-gray-400">{customerData?.email || ''}</p>
+        <h3 className="font-semibold text-lg truncate">{customerData?.name || 'User'}</h3>
+        <p className="text-sm text-gray-400 truncate" title={customerData?.email || ''}>
+          {customerData?.email || ''}
+        </p>
       </div>
 
       {/* Navigation */}

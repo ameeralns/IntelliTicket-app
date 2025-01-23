@@ -3,7 +3,15 @@
 import { useState } from 'react';
 import { Filter } from 'lucide-react';
 
-export default function TicketFilters() {
+interface TicketFiltersProps {
+  onFiltersChange: (filters: {
+    status: string[];
+    priority: string[];
+    dateRange: 'all' | 'week' | 'month' | 'year';
+  }) => void;
+}
+
+export default function TicketFilters({ onFiltersChange }: TicketFiltersProps) {
   const [selectedStatus, setSelectedStatus] = useState<string[]>([]);
   const [selectedPriority, setSelectedPriority] = useState<string[]>([]);
   const [dateRange, setDateRange] = useState<'all' | 'week' | 'month' | 'year'>('all');
@@ -12,19 +20,47 @@ export default function TicketFilters() {
   const priorities = ['Low', 'Medium', 'High', 'Urgent'];
 
   const handleStatusToggle = (status: string) => {
-    setSelectedStatus(prev =>
-      prev.includes(status)
-        ? prev.filter(s => s !== status)
-        : [...prev, status]
-    );
+    const newStatus = selectedStatus.includes(status)
+      ? selectedStatus.filter(s => s !== status)
+      : [...selectedStatus, status];
+    setSelectedStatus(newStatus);
+    onFiltersChange({
+      status: newStatus,
+      priority: selectedPriority,
+      dateRange
+    });
   };
 
   const handlePriorityToggle = (priority: string) => {
-    setSelectedPriority(prev =>
-      prev.includes(priority)
-        ? prev.filter(p => p !== priority)
-        : [...prev, priority]
-    );
+    const newPriority = selectedPriority.includes(priority)
+      ? selectedPriority.filter(p => p !== priority)
+      : [...selectedPriority, priority];
+    setSelectedPriority(newPriority);
+    onFiltersChange({
+      status: selectedStatus,
+      priority: newPriority,
+      dateRange
+    });
+  };
+
+  const handleDateRangeChange = (range: 'all' | 'week' | 'month' | 'year') => {
+    setDateRange(range);
+    onFiltersChange({
+      status: selectedStatus,
+      priority: selectedPriority,
+      dateRange: range
+    });
+  };
+
+  const handleReset = () => {
+    setSelectedStatus([]);
+    setSelectedPriority([]);
+    setDateRange('all');
+    onFiltersChange({
+      status: [],
+      priority: [],
+      dateRange: 'all'
+    });
   };
 
   return (
@@ -75,7 +111,7 @@ export default function TicketFilters() {
         <h3 className="text-sm font-medium text-gray-400 mb-3">Date Range</h3>
         <select
           value={dateRange}
-          onChange={(e) => setDateRange(e.target.value as 'all' | 'week' | 'month' | 'year')}
+          onChange={(e) => handleDateRangeChange(e.target.value as 'all' | 'week' | 'month' | 'year')}
           className="w-full bg-gray-700 text-white rounded-lg px-3 py-2 text-sm"
         >
           <option value="all">All Time</option>
@@ -88,11 +124,7 @@ export default function TicketFilters() {
       {/* Reset Filters */}
       {(selectedStatus.length > 0 || selectedPriority.length > 0 || dateRange !== 'all') && (
         <button
-          onClick={() => {
-            setSelectedStatus([]);
-            setSelectedPriority([]);
-            setDateRange('all');
-          }}
+          onClick={handleReset}
           className="w-full mt-6 px-4 py-2 bg-gray-700 text-gray-300 rounded-lg text-sm hover:bg-gray-600 transition-colors"
         >
           Reset Filters

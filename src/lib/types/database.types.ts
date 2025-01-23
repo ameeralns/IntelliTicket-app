@@ -442,6 +442,52 @@ export type Database = {
           },
         ]
       }
+      knowledge_articles: {
+        Row: {
+          article_id: string
+          organization_id: string
+          title: string
+          content: string
+          category: string
+          tags: string[]
+          view_count: number
+          is_published: boolean
+          created_at: string | null
+          updated_at: string | null
+        }
+        Insert: {
+          article_id?: string
+          organization_id: string
+          title: string
+          content: string
+          category: string
+          tags?: string[]
+          view_count?: number
+          is_published?: boolean
+          created_at?: string | null
+          updated_at?: string | null
+        }
+        Update: {
+          article_id?: string
+          organization_id?: string
+          title?: string
+          content?: string
+          category?: string
+          tags?: string[]
+          view_count?: number
+          is_published?: boolean
+          created_at?: string | null
+          updated_at?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "knowledge_articles_organization_id_fkey"
+            columns: ["organization_id"]
+            referencedRelation: "organizations"
+            referencedColumns: ["organization_id"]
+          }
+        ]
+      }
     }
     Views: {
       [_ in never]: never

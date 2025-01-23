@@ -1,85 +1,170 @@
 'use client';
 
 import { useState } from 'react';
-import { useRouter } from 'next/navigation';
 import { createClientComponentClient } from '@supabase/auth-helpers-nextjs';
-import { Tag, Loader2 } from 'lucide-react';
-
-interface Tag {
-  tag_id: string;
-  name: string;
-}
+import { Tag, Loader2, Upload } from 'lucide-react';
+import { toast } from 'react-hot-toast';
+import { useRouter } from 'next/navigation';
 
 interface NewTicketFormProps {
   customerId: string;
-  availableTags: Tag[];
+  availableTags: {
+    tag_id: string;
+    name: string;
+  }[];
+}
+
+interface FileUpload {
+  file: File;
+  progress: number;
 }
 
 export default function NewTicketForm({ customerId, availableTags }: NewTicketFormProps) {
-  const router = useRouter();
+  const [selectedTags, setSelectedTags] = useState<string[]>([]);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [selectedTags, setSelectedTags] = useState<string[]>([]);
-
+  const [fileUploads, setFileUploads] = useState<FileUpload[]>([]);
+  const router = useRouter();
   const supabase = createClientComponentClient();
+
+  const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const files = e.target.files;
+    if (!files) return;
+
+    // Convert FileList to array and add progress property
+    const newFiles = Array.from(files).map(file => ({
+      file,
+      progress: 0
+    }));
+
+    setFileUploads(prev => [...prev, ...newFiles]);
+  };
+
+  const uploadFile = async (fileUpload: FileUpload) => {
+    const { file } = fileUpload;
+    const fileExt = file.name.split('.').pop();
+    const fileName = `${Date.now()}.${fileExt}`;
+
+    try {
+      console.log('Starting file upload:', fileName);
+      console.log('File details:', {
+        name: file.name,
+        size: file.size,
+        type: file.type
+      });
+
+      const { data: session } = await supabase.auth.getSession();
+      console.log('Current session:', session?.user?.id);
+
+      const { error: uploadError, data } = await supabase.storage
+        .from('ticket-attachments')
+        .upload(fileName, file);
+
+      if (uploadError) {
+        console.error('Upload error details:', {
+          statusCode: uploadError.statusCode,
+          message: uploadError.message,
+          error: uploadError.error
+        });
+        throw uploadError;
+      }
+
+      console.log('Upload successful:', data);
+
+      return {
+        file_name: file.name,
+        file_size: file.size,
+        file_type: file.type,
+        storage_path: fileName
+      };
+    } catch (error) {
+      console.error('Error uploading file - Full error:', error);
+      throw error;
+    }
+  };
 
   const handleSubmit = async (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
     setIsSubmitting(true);
     setError(null);
 
-    const formData = new FormData(e.currentTarget);
-    const title = formData.get('title') as string;
-    const description = formData.get('description') as string;
-    const priority = formData.get('priority') as string;
+    const form = e.currentTarget;
+    const formData = new FormData(form);
 
     try {
-      // Create the ticket
+      console.log('Starting ticket creation...');
+      
+      // Create the ticket first
       const { data: ticket, error: ticketError } = await supabase
         .from('tickets')
         .insert({
           customer_id: customerId,
-          title,
-          description,
-          priority,
+          title: formData.get('title') as string,
+          description: formData.get('description') as string,
+          priority: formData.get('priority') as string,
           status: 'New'
         })
         .select()
         .single();
 
-      if (ticketError) throw ticketError;
+      if (ticketError) {
+        console.error('Ticket creation error:', ticketError);
+        throw ticketError;
+      }
+
+      console.log('Ticket created successfully:', ticket);
+
+      // Upload files and create attachment records
+      if (fileUploads.length > 0) {
+        console.log('Starting file uploads for ticket:', ticket.ticket_id);
+        
+        for (const fileUpload of fileUploads) {
+          try {
+            const attachmentData = await uploadFile(fileUpload);
+            console.log('File uploaded, creating attachment record:', attachmentData);
+            
+            const { error: attachmentError } = await supabase
+              .from('ticket_attachments')
+              .insert({
+                ticket_id: ticket.ticket_id,
+                ...attachmentData,
+                uploaded_by: customerId
+              });
+
+            if (attachmentError) {
+              console.error('Attachment record error:', attachmentError);
+              throw attachmentError;
+            }
+          } catch (error) {
+            console.error('File upload/attachment error:', error);
+            throw error;
+          }
+        }
+      }
 
       // Add tags if selected
       if (selectedTags.length > 0) {
-        const tagMappings = selectedTags.map(tagId => ({
-          ticket_id: ticket.ticket_id,
-          tag_id: tagId
-        }));
+        console.log('Adding tags to ticket:', selectedTags);
+        
+        const tagPromises = selectedTags.map((tagId) =>
+          supabase
+            .from('ticket_tags')
+            .insert({
+              ticket_id: ticket.ticket_id,
+              tag_id: tagId
+            })
+        );
 
-        const { error: tagError } = await supabase
-          .from('ticket_tags')
-          .insert(tagMappings);
-
-        if (tagError) throw tagError;
+        await Promise.all(tagPromises);
       }
 
-      // Create initial interaction
-      const { error: interactionError } = await supabase
-        .from('interactions')
-        .insert({
-          ticket_id: ticket.ticket_id,
-          customer_id: customerId,
-          content: description,
-          interaction_type: 'Note',
-          is_private: false
-        });
-
-      if (interactionError) throw interactionError;
-
+      toast.success('Ticket created successfully');
       router.push(`/dashboard/customer/tickets/${ticket.ticket_id}`);
-    } catch (err) {
-      console.error('Error creating ticket:', err);
+    } catch (error) {
+      console.error('Error in ticket creation process:', error);
       setError('Failed to create ticket. Please try again.');
+      toast.error('Failed to create ticket');
+    } finally {
       setIsSubmitting(false);
     }
   };
@@ -138,6 +223,58 @@ export default function NewTicketForm({ customerId, availableTags }: NewTicketFo
           <option value="High">High</option>
           <option value="Urgent">Urgent</option>
         </select>
+      </div>
+
+      {/* File Attachments */}
+      <div>
+        <label className="block text-sm font-medium text-gray-300 mb-2">
+          Attachments
+        </label>
+        <div className="space-y-4">
+          <div className="flex items-center justify-center w-full">
+            <label className="flex flex-col items-center justify-center w-full h-32 border-2 border-gray-600 border-dashed rounded-lg cursor-pointer bg-gray-700 hover:bg-gray-600">
+              <div className="flex flex-col items-center justify-center pt-5 pb-6">
+                <Upload className="w-8 h-8 mb-2 text-gray-400" />
+                <p className="mb-2 text-sm text-gray-400">
+                  <span className="font-semibold">Click to upload</span> or drag and drop
+                </p>
+                <p className="text-xs text-gray-500">
+                  Any file up to 10MB
+                </p>
+              </div>
+              <input
+                type="file"
+                className="hidden"
+                multiple
+                onChange={handleFileChange}
+                accept="image/*,.pdf,.doc,.docx,.txt"
+              />
+            </label>
+          </div>
+
+          {/* File List */}
+          {fileUploads.length > 0 && (
+            <div className="space-y-2">
+              {fileUploads.map((fileUpload, index) => (
+                <div
+                  key={index}
+                  className="flex items-center justify-between bg-gray-700 p-2 rounded-lg"
+                >
+                  <span className="text-sm text-gray-300 truncate">
+                    {fileUpload.file.name}
+                  </span>
+                  <button
+                    type="button"
+                    onClick={() => setFileUploads(prev => prev.filter((_, i) => i !== index))}
+                    className="text-red-400 hover:text-red-300"
+                  >
+                    Remove
+                  </button>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
       </div>
 
       {/* Tags */}

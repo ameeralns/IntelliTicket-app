@@ -3,25 +3,13 @@
 import { useState } from 'react';
 import Link from 'next/link';
 import { Clock, AlertCircle } from 'lucide-react';
+import { Database } from '@/lib/types/database.types';
+import NotificationPinger from './tickets/NotificationPinger';
 
-interface Agent {
-  name: string;
-}
-
-interface Team {
-  name: string;
-}
-
-interface Ticket {
-  ticket_id: string;
-  title: string;
-  status: string;
-  priority: string;
-  created_at: string;
-  updated_at: string;
-  agents: Agent | null;
-  teams: Team | null;
-}
+type Ticket = Database['public']['Tables']['tickets']['Row'] & {
+  agents: { name: string } | null;
+  teams: { name: string } | null;
+};
 
 interface ActiveTicketsProps {
   tickets: Ticket[] | null;
@@ -42,14 +30,14 @@ export default function ActiveTickets({ tickets = [] }: ActiveTicketsProps) {
     'In Progress': 'bg-yellow-500',
     Resolved: 'bg-green-500',
     Closed: 'bg-gray-500',
-  };
+  } as const;
 
   const priorityColors = {
     Low: 'bg-gray-500',
     Medium: 'bg-blue-500',
     High: 'bg-yellow-500',
     Urgent: 'bg-red-500',
-  };
+  } as const;
 
   return (
     <div className="bg-gray-800 rounded-lg p-6">
@@ -81,11 +69,14 @@ export default function ActiveTickets({ tickets = [] }: ActiveTicketsProps) {
           >
             <div className="flex justify-between items-start">
               <div>
-                <h3 className="text-white font-medium">{ticket.title}</h3>
+                <div className="flex items-center space-x-2">
+                  <h3 className="text-white font-medium">{ticket.title}</h3>
+                  <NotificationPinger ticketId={ticket.ticket_id} />
+                </div>
                 <div className="flex items-center space-x-4 mt-2 text-sm text-gray-400">
                   <span className="flex items-center">
                     <Clock className="w-4 h-4 mr-1" />
-                    {new Date(ticket.created_at).toLocaleDateString()}
+                    {new Date(ticket.created_at || '').toLocaleDateString()}
                   </span>
                   {ticket.agents && (
                     <span>Assigned to: {ticket.agents.name}</span>
@@ -98,14 +89,14 @@ export default function ActiveTickets({ tickets = [] }: ActiveTicketsProps) {
               <div className="flex space-x-2">
                 <span
                   className={`px-2 py-1 rounded-md text-xs font-medium text-white ${
-                    statusColors[ticket.status as keyof typeof statusColors]
+                    statusColors[ticket.status as keyof typeof statusColors] || 'bg-gray-500'
                   }`}
                 >
                   {ticket.status}
                 </span>
                 <span
                   className={`px-2 py-1 rounded-md text-xs font-medium text-white ${
-                    priorityColors[ticket.priority as keyof typeof priorityColors]
+                    priorityColors[ticket.priority as keyof typeof priorityColors] || 'bg-gray-500'
                   }`}
                 >
                   {ticket.priority}

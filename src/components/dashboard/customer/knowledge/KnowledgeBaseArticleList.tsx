@@ -2,10 +2,10 @@
 
 import Link from 'next/link';
 import { Clock, ChevronRight } from 'lucide-react';
-import { Database } from '@/lib/supabase/database.types';
+import { Database } from '@/lib/types/database.types';
 import { useSearchParams } from 'next/navigation';
 
-type Article = Database['public']['Tables']['knowledge_base_articles']['Row'];
+type Article = Database['public']['Tables']['knowledge_articles']['Row'];
 
 interface KnowledgeBaseArticleListProps {
   articles: Article[];
@@ -41,6 +41,13 @@ export default function KnowledgeBaseArticleList({ articles }: KnowledgeBaseArti
     );
   }
 
+  // Calculate estimated read time based on content length (rough estimate)
+  const calculateReadTime = (content: string) => {
+    const wordsPerMinute = 200;
+    const words = content.split(/\s+/).length;
+    return Math.ceil(words / wordsPerMinute);
+  };
+
   return (
     <div className="space-y-4">
       {filteredArticles.map((article) => (
@@ -60,11 +67,16 @@ export default function KnowledgeBaseArticleList({ articles }: KnowledgeBaseArti
               <div className="flex items-center space-x-4 text-sm text-gray-400">
                 <span className="inline-flex items-center space-x-1">
                   <Clock className="w-4 h-4" />
-                  <span>{article.read_time} min read</span>
+                  <span>{calculateReadTime(article.content)} min read</span>
                 </span>
                 <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-blue-500/10 text-blue-500">
                   {article.category}
                 </span>
+                {article.view_count > 0 && (
+                  <span className="text-gray-500">
+                    {article.view_count} views
+                  </span>
+                )}
               </div>
             </div>
             <ChevronRight className="w-5 h-5 text-gray-400 flex-shrink-0" />

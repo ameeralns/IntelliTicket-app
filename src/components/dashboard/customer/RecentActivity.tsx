@@ -1,21 +1,23 @@
 'use client';
 
-import { MessageSquare, Phone, Mail } from 'lucide-react';
+import { MessageSquare, Phone, Mail, AlertCircle, CheckCircle, Clock, User } from 'lucide-react';
+import { Database } from '@/lib/types/database.types';
+import Link from 'next/link';
 
-interface Agent {
-  name: string;
-}
-
-interface Interaction {
-  interaction_id: string;
-  content: string;
-  interaction_type: 'Email' | 'Chat' | 'Phone';
-  created_at: string;
-  agents: Agent | null;
-}
+type InteractionWithAgent = Database['public']['Tables']['interactions']['Row'] & {
+  agents: {
+    name: string;
+    role: string;
+  } | null;
+  tickets: {
+    title: string;
+    ticket_id: string;
+    status: string;
+  } | null;
+};
 
 interface RecentActivityProps {
-  interactions: Interaction[] | null;
+  interactions: InteractionWithAgent[] | null;
 }
 
 export default function RecentActivity({ interactions = [] }: RecentActivityProps) {
@@ -27,12 +29,35 @@ export default function RecentActivity({ interactions = [] }: RecentActivityProp
         return <Phone className="w-4 h-4" />;
       case 'Email':
         return <Mail className="w-4 h-4" />;
+      case 'Status':
+        return <CheckCircle className="w-4 h-4" />;
+      case 'Assignment':
+        return <User className="w-4 h-4" />;
       default:
-        return <MessageSquare className="w-4 h-4" />;
+        return <AlertCircle className="w-4 h-4" />;
     }
   };
 
-  const getTimeAgo = (date: string) => {
+  const getInteractionColor = (type: string) => {
+    switch (type) {
+      case 'Chat':
+        return 'bg-green-500/20 text-green-500';
+      case 'Phone':
+        return 'bg-blue-500/20 text-blue-500';
+      case 'Email':
+        return 'bg-purple-500/20 text-purple-500';
+      case 'Status':
+        return 'bg-yellow-500/20 text-yellow-500';
+      case 'Assignment':
+        return 'bg-orange-500/20 text-orange-500';
+      default:
+        return 'bg-gray-500/20 text-gray-500';
+    }
+  };
+
+  const getTimeAgo = (date: string | null) => {
+    if (!date) return 'some time ago';
+    
     const seconds = Math.floor((new Date().getTime() - new Date(date).getTime()) / 1000);
     
     let interval = seconds / 31536000;
@@ -62,9 +87,7 @@ export default function RecentActivity({ interactions = [] }: RecentActivityProp
           <div key={interaction.interaction_id} className="flex space-x-4">
             <div className={`
               w-8 h-8 rounded-full flex items-center justify-center
-              ${interaction.interaction_type === 'Chat' ? 'bg-green-500/20 text-green-500' :
-                interaction.interaction_type === 'Phone' ? 'bg-blue-500/20 text-blue-500' :
-                'bg-purple-500/20 text-purple-500'}
+              ${getInteractionColor(interaction.interaction_type)}
             `}>
               {getInteractionIcon(interaction.interaction_type)}
             </div>
@@ -74,6 +97,11 @@ export default function RecentActivity({ interactions = [] }: RecentActivityProp
                 <div>
                   <p className="text-sm font-medium text-white">
                     {interaction.agents?.name || 'System'}
+                    {interaction.agents?.role && (
+                      <span className="text-xs text-gray-400 ml-2">
+                        ({interaction.agents.role})
+                      </span>
+                    )}
                   </p>
                   <p className="text-xs text-gray-400">
                     via {interaction.interaction_type}
@@ -83,11 +111,30 @@ export default function RecentActivity({ interactions = [] }: RecentActivityProp
                   {getTimeAgo(interaction.created_at)}
                 </span>
               </div>
+              
+              {interaction.tickets && (
+                <Link 
+                  href={`/dashboard/customer/tickets/${interaction.tickets.ticket_id}`}
+                  className="block mt-1 text-sm text-blue-400 hover:text-blue-300"
+                >
+                  {interaction.tickets.title}
+                </Link>
+              )}
+              
               <p className="mt-2 text-sm text-gray-300">
                 {interaction.content.length > 100
                   ? `${interaction.content.substring(0, 100)}...`
                   : interaction.content}
               </p>
+              
+              {interaction.tickets?.status && (
+                <div className="mt-2 flex items-center space-x-2">
+                  <Clock className="w-3 h-3 text-gray-400" />
+                  <span className="text-xs text-gray-400">
+                    Ticket Status: {interaction.tickets.status}
+                  </span>
+                </div>
+              )}
             </div>
           </div>
         ))}

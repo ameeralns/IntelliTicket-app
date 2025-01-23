@@ -40,7 +40,8 @@ CREATE TABLE customers (
     email VARCHAR(100) NOT NULL UNIQUE,
     phone VARCHAR(20),
     created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
-    updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
+    updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+    avatar_url TEXT
 );
 
 -- Tickets Table
@@ -511,3 +512,75 @@ CREATE TRIGGER update_tutorials_updated_at
 CREATE EXTENSION IF NOT EXISTS pg_trgm;  -- For text search
 CREATE EXTENSION IF NOT EXISTS btree_gin;  -- For faster indexing
 CREATE EXTENSION IF NOT EXISTS btree_gist; -- For range queries 
+
+-- Ticket Attachments Table
+CREATE TABLE IF NOT EXISTS ticket_attachments (
+    attachment_id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    ticket_id UUID NOT NULL REFERENCES tickets(ticket_id) ON DELETE CASCADE,
+    file_name VARCHAR(255) NOT NULL,
+    file_size INTEGER NOT NULL,
+    file_type VARCHAR(100) NOT NULL,
+    storage_path VARCHAR(500) NOT NULL,
+    uploaded_by UUID NOT NULL,
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
+);
+
+-- Create index for ticket attachments
+CREATE INDEX idx_ticket_attachments_ticket ON ticket_attachments(ticket_id);
+
+-- Create ticket notifications table
+CREATE TABLE IF NOT EXISTS ticket_notifications (
+    notification_id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    ticket_id UUID NOT NULL REFERENCES tickets(ticket_id) ON DELETE CASCADE,
+    customer_id UUID NOT NULL REFERENCES customers(customer_id) ON DELETE CASCADE,
+    interaction_id UUID REFERENCES interactions(interaction_id) ON DELETE CASCADE,
+    content TEXT NOT NULL,
+    is_read BOOLEAN DEFAULT false,
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+    UNIQUE(ticket_id, interaction_id)
+);
+
+-- Create index for faster notification queries
+CREATE INDEX IF NOT EXISTS idx_ticket_notifications_customer 
+ON ticket_notifications(customer_id, is_read);
+
+-- Create index for ticket lookups
+CREATE INDEX IF NOT EXISTS idx_ticket_notifications_ticket 
+ON ticket_notifications(ticket_id);
+
+-- Add trigger function to create notifications
+CREATE OR REPLACE FUNCTION create_ticket_notification()
+RETURNS TRIGGER AS $$
+BEGIN
+    -- Create notification for new interactions from agents
+    IF NEW.agent_id IS NOT NULL THEN
+        INSERT INTO ticket_notifications (
+            ticket_id,
+            customer_id,
+            interaction_id,
+            content
+        )
+        SELECT 
+            NEW.ticket_id,
+            t.customer_id,
+            NEW.interaction_id,
+            CASE 
+                WHEN NEW.interaction_type = 'Status' THEN 'Ticket status updated to: ' || NEW.content
+                WHEN NEW.interaction_type = 'Assignment' THEN 'Ticket assigned to new agent'
+                ELSE 'New response from agent'
+            END
+        FROM tickets t
+        WHERE t.ticket_id = NEW.ticket_id
+        ON CONFLICT (ticket_id, interaction_id) DO NOTHING;
+    END IF;
+    
+    RETURN NEW;
+END;
+$$ LANGUAGE plpgsql;
+
+-- Create trigger for new interactions
+DROP TRIGGER IF EXISTS trigger_create_notification ON interactions;
+CREATE TRIGGER trigger_create_notification
+    AFTER INSERT ON interactions
+    FOR EACH ROW
+    EXECUTE FUNCTION create_ticket_notification();

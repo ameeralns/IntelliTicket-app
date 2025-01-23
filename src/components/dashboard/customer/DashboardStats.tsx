@@ -1,11 +1,11 @@
 'use client';
 
-interface Ticket {
-  status: string;
-  priority: string;
-  satisfaction_score: number | null;
-  created_at: string;
-}
+import { Database } from '@/lib/types/database.types';
+
+type Ticket = Database['public']['Tables']['tickets']['Row'] & {
+  agents: { name: string } | null;
+  teams: { name: string } | null;
+};
 
 interface DashboardStatsProps {
   tickets: Ticket[] | null;
