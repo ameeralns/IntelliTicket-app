@@ -2,11 +2,11 @@
 
 import { useState, useEffect } from 'react';
 import { createClientComponentClient } from '@supabase/auth-helpers-nextjs';
-import { notFound } from 'next/navigation';
 import ProfileForm from '@/components/dashboard/customer/profile/ProfileForm';
 import NotificationSettings from '@/components/dashboard/customer/profile/NotificationSettings';
 import ContactPreferences from '@/components/dashboard/customer/profile/ContactPreferences';
 import AvatarUpload from '@/components/dashboard/customer/profile/AvatarUpload';
+import { notFound, useRouter } from 'next/navigation';
 
 interface Customer {
   customer_id: string;
@@ -49,6 +49,21 @@ export default function ProfilePage() {
   const handleAvatarUpdate = (newAvatarUrl: string | null) => {
     if (customerData) {
       setCustomerData({ ...customerData, avatar_url: newAvatarUrl });
+    }
+  };
+
+  const [isSigningOut, setIsSigningOut] = useState(false);
+  const router = useRouter();
+  const handleSignOut = async () => {
+    setIsSigningOut(true);
+    try {
+      const { error } = await supabase.auth.signOut();
+      if (error) throw error;
+      router.push('/login');
+    } catch (error) {
+      console.error('Error signing out:', error);
+    } finally {
+      setIsSigningOut(false);
     }
   };
 
@@ -96,6 +111,16 @@ export default function ProfilePage() {
               }}
             />
           </div>
+          <div className="bg-gray-800 rounded-lg p-6">
+  <h2 className="text-xl font-semibold text-white mb-6">Account Actions</h2>
+  <button
+    onClick={handleSignOut}
+    disabled={isSigningOut}
+    className="w-full bg-red-600 hover:bg-red-700 text-white font-semibold py-3 px-4 rounded-lg transition-colors duration-200 disabled:opacity-50 disabled:cursor-not-allowed"
+  >
+    {isSigningOut ? 'Signing out...' : 'Sign Out'}
+  </button>
+</div>
         </div>
       </div>
     </div>
