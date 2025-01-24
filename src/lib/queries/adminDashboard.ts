@@ -119,8 +119,7 @@ export async function fetchDashboardStats(
   const { count: openTicketCount } = await supabase
     .from('tickets')
     .select('*', { count: 'exact', head: true })
-    .eq('status', 'New')
-    .or('status.eq.In Progress,status.eq.Assigned');
+    .neq('status', 'Closed');
 
   // Get total interactions this month
   const startOfMonth = new Date();

@@ -6,39 +6,69 @@ export type Json =
   | { [key: string]: Json | undefined }
   | Json[]
 
-export type Database = {
+export interface Database {
   public: {
     Tables: {
+      organizations: {
+        Row: {
+          created_at: string | null
+          description: string | null
+          name: string
+          organization_id: string
+          updated_at: string | null
+          customer_code: string
+          agent_code: string
+        }
+        Insert: {
+          created_at?: string | null
+          description?: string | null
+          name: string
+          organization_id?: string
+          updated_at?: string | null
+          customer_code?: string
+          agent_code?: string
+        }
+        Update: {
+          created_at?: string | null
+          description?: string | null
+          name?: string
+          organization_id?: string
+          updated_at?: string | null
+          customer_code?: string
+          agent_code?: string
+        }
+        Relationships: []
+      }
       agents: {
         Row: {
           agent_id: string
-          created_at: string | null
-          email: string
-          name: string
-          organization_id: string
-          role: string
           team_id: string | null
-          updated_at: string | null
+          organization_id: string
+          name: string
+          email: string
+          role: string
+          created_at: string
+          updated_at: string
         }
         Insert: {
           agent_id?: string
-          created_at?: string | null
-          email: string
-          name: string
-          organization_id: string
-          role: string
           team_id?: string | null
-          updated_at?: string | null
+          organization_id: string
+          name: string
+          email: string
+          role: string
+          created_at?: string
+          updated_at?: string
         }
         Update: {
           agent_id?: string
-          created_at?: string | null
-          email?: string
-          name?: string
-          organization_id?: string
-          role?: string
           team_id?: string | null
-          updated_at?: string | null
+          organization_id?: string
+          name?: string
+          email?: string
+          role?: string
+          created_at?: string
+          updated_at?: string
         }
         Relationships: [
           {
@@ -88,37 +118,46 @@ export type Database = {
       }
       customers: {
         Row: {
-          contact_preferences: Json | null
-          created_at: string | null
           customer_id: string
-          email: string
-          name: string
-          notification_settings: Json | null
           organization_id: string
+          name: string
+          email: string
           phone: string | null
-          updated_at: string | null
+          created_at: string
+          updated_at: string
+          avatar_url: string | null
+          contact_preferences: {
+            email: boolean
+            phone: boolean
+          } | null
+          notification_settings: {
+            ticket_updates: boolean
+            marketing: boolean
+          } | null
         }
         Insert: {
-          contact_preferences?: Json | null
-          created_at?: string | null
           customer_id?: string
-          email: string
-          name: string
-          notification_settings?: Json | null
           organization_id: string
+          name: string
+          email: string
           phone?: string | null
-          updated_at?: string | null
+          created_at?: string
+          updated_at?: string
+          avatar_url?: string | null
+          contact_preferences?: Json | null
+          notification_settings?: Json | null
         }
         Update: {
-          contact_preferences?: Json | null
-          created_at?: string | null
           customer_id?: string
-          email?: string
-          name?: string
-          notification_settings?: Json | null
           organization_id?: string
+          name?: string
+          email?: string
           phone?: string | null
-          updated_at?: string | null
+          created_at?: string
+          updated_at?: string
+          avatar_url?: string | null
+          contact_preferences?: Json | null
+          notification_settings?: Json | null
         }
         Relationships: [
           {
@@ -176,34 +215,34 @@ export type Database = {
       }
       interactions: {
         Row: {
-          agent_id: string | null
-          content: string
-          created_at: string | null
-          customer_id: string | null
           interaction_id: string
-          interaction_type: string
-          is_private: boolean | null
           ticket_id: string
+          agent_id: string | null
+          customer_id: string | null
+          content: string
+          interaction_type: string
+          created_at: string
+          is_private: boolean
         }
         Insert: {
-          agent_id?: string | null
-          content: string
-          created_at?: string | null
-          customer_id?: string | null
           interaction_id?: string
-          interaction_type: string
-          is_private?: boolean | null
           ticket_id: string
+          agent_id?: string | null
+          customer_id?: string | null
+          content: string
+          interaction_type: string
+          created_at?: string
+          is_private?: boolean
         }
         Update: {
-          agent_id?: string | null
-          content?: string
-          created_at?: string | null
-          customer_id?: string | null
           interaction_id?: string
-          interaction_type?: string
-          is_private?: boolean | null
           ticket_id?: string
+          agent_id?: string | null
+          customer_id?: string | null
+          content?: string
+          interaction_type?: string
+          created_at?: string
+          is_private?: boolean
         }
         Relationships: [
           {
@@ -228,30 +267,6 @@ export type Database = {
             referencedColumns: ["ticket_id"]
           },
         ]
-      }
-      organizations: {
-        Row: {
-          created_at: string | null
-          description: string | null
-          name: string
-          organization_id: string
-          updated_at: string | null
-        }
-        Insert: {
-          created_at?: string | null
-          description?: string | null
-          name: string
-          organization_id?: string
-          updated_at?: string | null
-        }
-        Update: {
-          created_at?: string | null
-          description?: string | null
-          name?: string
-          organization_id?: string
-          updated_at?: string | null
-        }
-        Relationships: []
       }
       system_settings: {
         Row: {
@@ -370,46 +385,43 @@ export type Database = {
       }
       tickets: {
         Row: {
-          agent_id: string | null
-          created_at: string | null
-          customer_id: string
-          description: string
-          organization_id: string | null
-          priority: string
-          satisfaction_score: number | null
-          status: string
-          team_id: string | null
           ticket_id: string
+          customer_id: string
+          agent_id: string | null
+          team_id: string | null
           title: string
-          updated_at: string | null
+          description: string
+          status: string
+          priority: string
+          created_at: string
+          updated_at: string
+          satisfaction_score: number | null
         }
         Insert: {
-          agent_id?: string | null
-          created_at?: string | null
-          customer_id: string
-          description: string
-          organization_id?: string | null
-          priority: string
-          satisfaction_score?: number | null
-          status: string
-          team_id?: string | null
           ticket_id?: string
+          customer_id: string
+          agent_id?: string | null
+          team_id?: string | null
           title: string
-          updated_at?: string | null
+          description: string
+          status: string
+          priority: string
+          created_at?: string
+          updated_at?: string
+          satisfaction_score?: number | null
         }
         Update: {
-          agent_id?: string | null
-          created_at?: string | null
-          customer_id?: string
-          description?: string
-          organization_id?: string | null
-          priority?: string
-          satisfaction_score?: number | null
-          status?: string
-          team_id?: string | null
           ticket_id?: string
+          customer_id?: string
+          agent_id?: string | null
+          team_id?: string | null
           title?: string
-          updated_at?: string | null
+          description?: string
+          status?: string
+          priority?: string
+          created_at?: string
+          updated_at?: string
+          satisfaction_score?: number | null
         }
         Relationships: [
           {
@@ -448,41 +460,89 @@ export type Database = {
           organization_id: string
           title: string
           content: string
-          category: string
-          tags: string[]
+          category: string | null
+          tags: string[] | null
           view_count: number
           is_published: boolean
-          created_at: string | null
-          updated_at: string | null
+          created_at: string
+          updated_at: string
+          pdf_url: string | null
+          pdf_filename: string | null
+          pdf_size_bytes: number | null
+          pdf_last_modified: string | null
         }
         Insert: {
           article_id?: string
           organization_id: string
           title: string
           content: string
-          category: string
-          tags?: string[]
+          category?: string | null
+          tags?: string[] | null
           view_count?: number
           is_published?: boolean
-          created_at?: string | null
-          updated_at?: string | null
+          created_at?: string
+          updated_at?: string
+          pdf_url?: string | null
+          pdf_filename?: string | null
+          pdf_size_bytes?: number | null
+          pdf_last_modified?: string | null
         }
         Update: {
           article_id?: string
           organization_id?: string
           title?: string
           content?: string
-          category?: string
-          tags?: string[]
+          category?: string | null
+          tags?: string[] | null
           view_count?: number
           is_published?: boolean
-          created_at?: string | null
-          updated_at?: string | null
+          created_at?: string
+          updated_at?: string
+          pdf_url?: string | null
+          pdf_filename?: string | null
+          pdf_size_bytes?: number | null
+          pdf_last_modified?: string | null
         }
         Relationships: [
           {
             foreignKeyName: "knowledge_articles_organization_id_fkey"
             columns: ["organization_id"]
+            isOneToOne: false
+            referencedRelation: "organizations"
+            referencedColumns: ["organization_id"]
+          }
+        ]
+      }
+      categories: {
+        Row: {
+          category_id: string
+          created_at: string | null
+          description: string | null
+          name: string
+          organization_id: string
+          updated_at: string | null
+        }
+        Insert: {
+          category_id?: string
+          created_at?: string | null
+          description?: string | null
+          name: string
+          organization_id: string
+          updated_at?: string | null
+        }
+        Update: {
+          category_id?: string
+          created_at?: string | null
+          description?: string | null
+          name?: string
+          organization_id?: string
+          updated_at?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "categories_organization_id_fkey"
+            columns: ["organization_id"]
+            isOneToOne: false
             referencedRelation: "organizations"
             referencedColumns: ["organization_id"]
           }

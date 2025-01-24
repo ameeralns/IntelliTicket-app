@@ -8,13 +8,6 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Alert, AlertDescription } from '@/components/ui/alert';
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from '@/components/ui/select';
 import { ArrowLeft, UserPlus } from 'lucide-react';
 
 export default function RegisterPage() {
@@ -22,8 +15,7 @@ export default function RegisterPage() {
   const [name, setName] = useState('');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
-  const [role, setRole] = useState<'admin' | 'agent' | 'customer'>('customer');
-  const [organization, setOrganization] = useState('');
+  const [organizationCode, setOrganizationCode] = useState('');
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
 
@@ -35,14 +27,17 @@ export default function RegisterPage() {
     try {
       const metadata = {
         name,
-        ...(role !== 'customer' && { organization }),
       };
 
-      const { data, error } = await signUpWithEmail(email, password, role, metadata);
+      const { data, error } = await signUpWithEmail(email, password, organizationCode, metadata);
       if (error) throw error;
 
-      // Show success message and redirect to login
-      router.push('/login?registered=true');
+      // Get the role from the signup response
+      const role = data?.user?.user_metadata?.role;
+      if (!role) throw new Error('Role not assigned');
+
+      // Redirect to the appropriate dashboard
+      router.push(`/dashboard/${role}`);
     } catch (error: any) {
       setError(error.message || 'An error occurred during registration');
     } finally {
@@ -127,36 +122,20 @@ export default function RegisterPage() {
             </div>
 
             <div className="space-y-2">
-              <Label htmlFor="role" className="text-slate-200">Role</Label>
-              <Select
-                value={role}
-                onValueChange={(value: 'admin' | 'agent' | 'customer') => setRole(value)}
-              >
-                <SelectTrigger className="bg-slate-800/50 border-slate-700 text-white">
-                  <SelectValue placeholder="Select your role" />
-                </SelectTrigger>
-                <SelectContent className="bg-slate-800 border-slate-700">
-                  <SelectItem value="customer" className="text-white hover:bg-slate-700">Customer</SelectItem>
-                  <SelectItem value="agent" className="text-white hover:bg-slate-700">Support Agent</SelectItem>
-                  <SelectItem value="admin" className="text-white hover:bg-slate-700">Administrator</SelectItem>
-                </SelectContent>
-              </Select>
+              <Label htmlFor="organizationCode" className="text-slate-200">Organization Code</Label>
+              <Input
+                id="organizationCode"
+                type="text"
+                value={organizationCode}
+                onChange={(e) => setOrganizationCode(e.target.value)}
+                required
+                className="bg-slate-800/50 border-slate-700 text-white placeholder:text-slate-400"
+                placeholder="Enter your organization code"
+              />
+              <p className="text-sm text-slate-400">
+                Enter the organization code provided to you
+              </p>
             </div>
-
-            {role !== 'customer' && (
-              <div className="space-y-2">
-                <Label htmlFor="organization" className="text-slate-200">Organization Name</Label>
-                <Input
-                  id="organization"
-                  type="text"
-                  value={organization}
-                  onChange={(e) => setOrganization(e.target.value)}
-                  required
-                  className="bg-slate-800/50 border-slate-700 text-white placeholder:text-slate-400"
-                  placeholder="Your Company Name"
-                />
-              </div>
-            )}
 
             <Button
               type="submit"

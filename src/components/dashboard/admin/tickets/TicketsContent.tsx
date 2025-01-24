@@ -28,30 +28,30 @@ const TicketsContent: React.FC<TicketsContentProps> = () => {
           placeholder="Search tickets..."
           value={searchQuery}
           onChange={(e) => setSearchQuery(e.target.value)}
-          className="max-w-sm"
+          className="max-w-sm text-gray-900 placeholder:text-gray-500 bg-white"
         />
         <Select value={statusFilter} onValueChange={setStatusFilter}>
-          <SelectTrigger className="w-[180px]">
-            <SelectValue placeholder="Status" />
+          <SelectTrigger className="w-[180px] bg-white text-gray-900 border-gray-200">
+            <SelectValue placeholder="Status" className="text-gray-900" />
           </SelectTrigger>
-          <SelectContent>
-            <SelectItem value="All">All Status</SelectItem>
-            <SelectItem value="New">New</SelectItem>
-            <SelectItem value="Assigned">Assigned</SelectItem>
-            <SelectItem value="In Progress">In Progress</SelectItem>
-            <SelectItem value="Resolved">Resolved</SelectItem>
+          <SelectContent className="bg-white border-gray-200">
+            <SelectItem value="All" className="text-gray-900">All Status</SelectItem>
+            <SelectItem value="New" className="text-gray-900">New</SelectItem>
+            <SelectItem value="Assigned" className="text-gray-900">Assigned</SelectItem>
+            <SelectItem value="In Progress" className="text-gray-900">In Progress</SelectItem>
+            <SelectItem value="Resolved" className="text-gray-900">Resolved</SelectItem>
           </SelectContent>
         </Select>
         <Select value={priorityFilter} onValueChange={setPriorityFilter}>
-          <SelectTrigger className="w-[180px]">
-            <SelectValue placeholder="Priority" />
+          <SelectTrigger className="w-[180px] bg-white text-gray-900 border-gray-200">
+            <SelectValue placeholder="Priority" className="text-gray-900" />
           </SelectTrigger>
-          <SelectContent>
-            <SelectItem value="All">All Priority</SelectItem>
-            <SelectItem value="Low">Low</SelectItem>
-            <SelectItem value="Medium">Medium</SelectItem>
-            <SelectItem value="High">High</SelectItem>
-            <SelectItem value="Urgent">Urgent</SelectItem>
+          <SelectContent className="bg-white border-gray-200">
+            <SelectItem value="All" className="text-gray-900">All Priority</SelectItem>
+            <SelectItem value="Low" className="text-gray-900">Low</SelectItem>
+            <SelectItem value="Medium" className="text-gray-900">Medium</SelectItem>
+            <SelectItem value="High" className="text-gray-900">High</SelectItem>
+            <SelectItem value="Urgent" className="text-gray-900">Urgent</SelectItem>
           </SelectContent>
         </Select>
       </div>

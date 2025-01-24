@@ -584,3 +584,105 @@ CREATE TRIGGER trigger_create_notification
     AFTER INSERT ON interactions
     FOR EACH ROW
     EXECUTE FUNCTION create_ticket_notification();
+
+ALTER TABLE organizations ADD COLUMN customer_code VARCHAR(10), ADD COLUMN agent_code VARCHAR(10);
+UPDATE organizations SET customer_code = 'CUS' || UPPER(SUBSTRING(MD5(RANDOM()::TEXT) FROM 1 FOR 7)), agent_code = 'AGT' || 
+UPPER(SUBSTRING(MD5(RANDOM()::TEXT) FROM 1 FOR 7)) WHERE customer_code IS NULL OR agent_code IS NULL;
+ALTER TABLE organizations ALTER COLUMN customer_code SET NOT NULL, ALTER COLUMN agent_code SET NOT NULL;
+
+-- Create trigger function for updated_at timestamps if it doesn't exist
+CREATE OR REPLACE FUNCTION trigger_set_timestamp()
+RETURNS TRIGGER AS $$
+BEGIN
+  NEW.updated_at = CURRENT_TIMESTAMP;
+  RETURN NEW;
+END;
+$$ LANGUAGE plpgsql;
+
+-- Create attachments table
+CREATE TABLE IF NOT EXISTS attachments (
+    attachment_id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    ticket_id UUID NOT NULL REFERENCES tickets(ticket_id) ON DELETE CASCADE,
+    interaction_id UUID NOT NULL REFERENCES interactions(interaction_id) ON DELETE CASCADE,
+    file_name TEXT NOT NULL,
+    file_url TEXT NOT NULL,
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT TIMEZONE('utc'::text, NOW()),
+    updated_at TIMESTAMP WITH TIME ZONE DEFAULT TIMEZONE('utc'::text, NOW())
+);
+
+-- Create index for faster lookups
+CREATE INDEX IF NOT EXISTS idx_attachments_ticket_id ON attachments(ticket_id);
+CREATE INDEX IF NOT EXISTS idx_attachments_interaction_id ON attachments(interaction_id);
+
+-- Add trigger for updated_at
+DROP TRIGGER IF EXISTS set_timestamp ON attachments;
+CREATE TRIGGER set_timestamp
+    BEFORE UPDATE ON attachments
+    FOR EACH ROW
+    EXECUTE FUNCTION trigger_set_timestamp();
+
+-- Knowledge Base PDF Attachments Support
+-- ====================================
+
+-- Add PDF attachment columns to knowledge_articles
+ALTER TABLE knowledge_articles
+ADD COLUMN IF NOT EXISTS pdf_url TEXT,
+ADD COLUMN IF NOT EXISTS pdf_filename TEXT,
+ADD COLUMN IF NOT EXISTS pdf_size_bytes BIGINT,
+ADD COLUMN IF NOT EXISTS pdf_last_modified TIMESTAMP WITH TIME ZONE;
+
+-- Create article-attachments bucket if it doesn't exist
+INSERT INTO storage.buckets (id, name, public) 
+VALUES ('article-attachments', 'article-attachments', true)
+ON CONFLICT (id) DO NOTHING;
+
+-- Remove any existing article attachment policies
+DROP POLICY IF EXISTS "Article Attachments Policy" ON storage.objects;
+
+-- Create policy for article attachments
+CREATE POLICY "Article Attachments Policy" ON storage.objects
+FOR ALL USING (
+    bucket_id = 'article-attachments'
+    AND auth.role() = 'authenticated'
+) WITH CHECK (
+    bucket_id = 'article-attachments'
+    AND auth.role() = 'authenticated'
+);
+
+-- Create index for PDF URL
+CREATE INDEX IF NOT EXISTS idx_knowledge_articles_pdf ON knowledge_articles(pdf_url);
+
+-- Add trigger to update pdf_last_modified
+CREATE OR REPLACE FUNCTION update_pdf_last_modified()
+RETURNS TRIGGER AS $$
+BEGIN
+    IF NEW.pdf_url IS DISTINCT FROM OLD.pdf_url THEN
+        NEW.pdf_last_modified = CURRENT_TIMESTAMP;
+    END IF;
+    RETURN NEW;
+END;
+$$ LANGUAGE plpgsql;
+
+CREATE TRIGGER update_knowledge_articles_pdf_modified
+    BEFORE UPDATE ON knowledge_articles
+    FOR EACH ROW
+    EXECUTE FUNCTION update_pdf_last_modified();
+
+-- Add cascade delete trigger for PDF files
+CREATE OR REPLACE FUNCTION delete_pdf_file()
+RETURNS TRIGGER AS $$
+BEGIN
+    IF OLD.pdf_url IS NOT NULL THEN
+        -- Delete the file from storage when the article is deleted
+        DELETE FROM storage.objects
+        WHERE bucket_id = 'article-attachments'
+        AND name = OLD.pdf_url;
+    END IF;
+    RETURN OLD;
+END;
+$$ LANGUAGE plpgsql;
+
+CREATE TRIGGER delete_knowledge_article_pdf
+    BEFORE DELETE ON knowledge_articles
+    FOR EACH ROW
+    EXECUTE FUNCTION delete_pdf_file();

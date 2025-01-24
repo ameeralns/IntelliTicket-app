@@ -5,7 +5,6 @@ import { createClientComponentClient } from '@supabase/auth-helpers-nextjs';
 import ProfileForm from '@/components/dashboard/customer/profile/ProfileForm';
 import NotificationSettings from '@/components/dashboard/customer/profile/NotificationSettings';
 import ContactPreferences from '@/components/dashboard/customer/profile/ContactPreferences';
-import AvatarUpload from '@/components/dashboard/customer/profile/AvatarUpload';
 import { notFound, useRouter } from 'next/navigation';
 
 interface Customer {
@@ -46,12 +45,6 @@ export default function ProfilePage() {
     loadCustomerData();
   }, []);
 
-  const handleAvatarUpdate = (newAvatarUrl: string | null) => {
-    if (customerData) {
-      setCustomerData({ ...customerData, avatar_url: newAvatarUrl });
-    }
-  };
-
   const [isSigningOut, setIsSigningOut] = useState(false);
   const router = useRouter();
   const handleSignOut = async () => {
@@ -75,14 +68,6 @@ export default function ProfilePage() {
         <h1 className="text-2xl font-bold text-white mb-8">Profile Settings</h1>
         
         <div className="space-y-8">
-          <div className="bg-gray-800 rounded-lg p-6">
-            <h2 className="text-xl font-semibold text-white mb-6">Profile Picture</h2>
-            <AvatarUpload
-              currentAvatarUrl={customerData.avatar_url}
-              onAvatarUpdate={handleAvatarUpdate}
-            />
-          </div>
-
           <div className="bg-gray-800 rounded-lg p-6">
             <h2 className="text-xl font-semibold text-white mb-6">Personal Information</h2>
             <ProfileForm
@@ -112,15 +97,15 @@ export default function ProfilePage() {
             />
           </div>
           <div className="bg-gray-800 rounded-lg p-6">
-  <h2 className="text-xl font-semibold text-white mb-6">Account Actions</h2>
-  <button
-    onClick={handleSignOut}
-    disabled={isSigningOut}
-    className="w-full bg-red-600 hover:bg-red-700 text-white font-semibold py-3 px-4 rounded-lg transition-colors duration-200 disabled:opacity-50 disabled:cursor-not-allowed"
-  >
-    {isSigningOut ? 'Signing out...' : 'Sign Out'}
-  </button>
-</div>
+            <h2 className="text-xl font-semibold text-white mb-6">Account Actions</h2>
+            <button
+              onClick={handleSignOut}
+              disabled={isSigningOut}
+              className="w-full bg-red-600 hover:bg-red-700 text-white font-semibold py-3 px-4 rounded-lg transition-colors duration-200 disabled:opacity-50 disabled:cursor-not-allowed"
+            >
+              {isSigningOut ? 'Signing out...' : 'Sign Out'}
+            </button>
+          </div>
         </div>
       </div>
     </div>

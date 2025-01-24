@@ -173,19 +173,19 @@ export default function CustomersPage() {
               <Search className="absolute left-2 top-2.5 h-4 w-4 text-gray-500" />
               <Input
                 placeholder="Search customers..."
-                className="pl-8 w-[300px] bg-white"
+                className="pl-8 w-[300px] text-gray-900 placeholder:text-gray-500 bg-white"
                 value={searchTerm}
                 onChange={(e) => setSearchTerm(e.target.value)}
               />
             </div>
             <Select value={filterStatus} onValueChange={setFilterStatus}>
-              <SelectTrigger className="w-[180px] bg-white">
-                <SelectValue placeholder="Filter by status" />
+              <SelectTrigger className="w-[180px] bg-white text-gray-900 border-gray-200">
+                <SelectValue placeholder="Filter by status" className="text-gray-900" />
               </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="all">All Customers</SelectItem>
-                <SelectItem value="active">Active</SelectItem>
-                <SelectItem value="inactive">Inactive</SelectItem>
+              <SelectContent className="bg-white border-gray-200">
+                <SelectItem value="all" className="text-gray-900">All Customers</SelectItem>
+                <SelectItem value="active" className="text-gray-900">Active</SelectItem>
+                <SelectItem value="inactive" className="text-gray-900">Inactive</SelectItem>
               </SelectContent>
             </Select>
           </div>

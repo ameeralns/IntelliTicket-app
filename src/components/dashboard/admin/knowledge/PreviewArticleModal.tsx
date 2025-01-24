@@ -1,6 +1,6 @@
 'use client';
 
-import { X } from 'lucide-react';
+import { X, FileText, ExternalLink } from 'lucide-react';
 import { Database } from '@/lib/types/database.types';
 
 type Article = Database['public']['Tables']['knowledge_articles']['Row'];
@@ -21,6 +21,20 @@ export default function PreviewArticleModal({
   const formatDate = (date: string | null) => {
     if (!date) return 'N/A';
     return new Date(date).toLocaleDateString();
+  };
+
+  const formatFileSize = (bytes: number | null) => {
+    if (!bytes) return 'Unknown size';
+    const units = ['B', 'KB', 'MB', 'GB'];
+    let size = bytes;
+    let unitIndex = 0;
+    
+    while (size >= 1024 && unitIndex < units.length - 1) {
+      size /= 1024;
+      unitIndex++;
+    }
+    
+    return `${size.toFixed(1)} ${units[unitIndex]}`;
   };
 
   return (
@@ -64,6 +78,31 @@ export default function PreviewArticleModal({
                 {article.content}
               </div>
             </div>
+
+            {/* PDF Attachment */}
+            {article.pdf_url && (
+              <div className="mt-6 bg-gray-50 rounded-lg p-4">
+                <h4 className="text-sm font-medium text-gray-900 mb-3">Attachment</h4>
+                <div className="flex items-center justify-between bg-white rounded-lg p-3 border border-gray-200">
+                  <div className="flex items-center space-x-3">
+                    <FileText className="w-5 h-5 text-blue-500" />
+                    <div>
+                      <p className="text-sm font-medium text-gray-900">{article.pdf_filename || 'Document'}</p>
+                      <p className="text-xs text-gray-500">{formatFileSize(article.pdf_size_bytes)}</p>
+                    </div>
+                  </div>
+                  <a
+                    href={article.pdf_url}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="flex items-center space-x-2 px-3 py-1.5 text-sm bg-blue-50 text-blue-600 rounded-md hover:bg-blue-100 transition-colors"
+                  >
+                    <ExternalLink className="w-4 h-4" />
+                    <span>View PDF</span>
+                  </a>
+                </div>
+              </div>
+            )}
 
             {/* Metadata */}
             <div className="pt-4 mt-6 border-t border-gray-100">

@@ -294,7 +294,7 @@ export default function AgentsPage() {
                 placeholder="Search by name, email, role, or team..."
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
-                className="w-full pl-10 pr-4 py-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary focus:border-transparent text-base placeholder:text-gray-400"
+                className="w-full pl-10 pr-4 py-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary focus:border-transparent text-base text-gray-900 placeholder:text-gray-500 bg-white"
               />
             </div>
           </div>
@@ -309,7 +309,7 @@ export default function AgentsPage() {
                 id="role-filter"
                 value={filterRole}
                 onChange={(e) => setFilterRole(e.target.value)}
-                className="w-full min-w-[160px] px-4 py-3 bg-white border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary focus:border-transparent text-base cursor-pointer"
+                className="w-full min-w-[160px] px-4 py-3 bg-white border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary focus:border-transparent text-base text-gray-900 cursor-pointer"
               >
                 <option value="all">All Roles</option>
                 <option value="agent">Agent</option>
@@ -324,7 +324,7 @@ export default function AgentsPage() {
                 id="team-filter"
                 value={filterTeam}
                 onChange={(e) => setFilterTeam(e.target.value)}
-                className="w-full min-w-[160px] px-4 py-3 bg-white border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary focus:border-transparent text-base cursor-pointer"
+                className="w-full min-w-[160px] px-4 py-3 bg-white border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary focus:border-transparent text-base text-gray-900 cursor-pointer"
               >
                 <option value="all">All Teams</option>
                 {teamOptions.map(teamName => (

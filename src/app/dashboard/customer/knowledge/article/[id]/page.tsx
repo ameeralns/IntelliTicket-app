@@ -3,6 +3,7 @@ import { redirect } from 'next/navigation';
 import { Database } from '@/lib/types/database.types';
 import { ArrowLeft } from 'lucide-react';
 import Link from 'next/link';
+import ArticleAttachment from '@/components/dashboard/customer/knowledge/ArticleAttachment';
 
 type Article = Database['public']['Tables']['knowledge_articles']['Row'];
 
@@ -35,7 +36,13 @@ export default async function ArticlePage({ params }: PageProps) {
   // Get article data
   const { data: article } = await supabase
     .from('knowledge_articles')
-    .select('*')
+    .select(`
+      *,
+      pdf_url,
+      pdf_filename,
+      pdf_size_bytes,
+      pdf_last_modified
+    `)
     .eq('article_id', params.id)
     .eq('organization_id', customerData.organization_id)
     .eq('is_published', true)
@@ -92,6 +99,13 @@ export default async function ArticlePage({ params }: PageProps) {
             ))}
           </div>
         </div>
+
+        {/* Article Attachment */}
+        <ArticleAttachment
+          pdfUrl={article.pdf_url}
+          pdfFilename={article.pdf_filename}
+          pdfSizeBytes={article.pdf_size_bytes}
+        />
 
         {/* Tags */}
         {article.tags && article.tags.length > 0 && (
