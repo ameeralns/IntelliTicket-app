@@ -116,7 +116,7 @@ export default function TicketContent({ initialTicket }: TicketContentProps) {
       interaction_type: interaction.interaction_type as 'Email' | 'Chat' | 'Phone'
     }));
 
-  const isResolved = ticket.status === 'Resolved';
+  const isTicketClosed = ticket.status === 'Resolved' || ticket.status === 'Closed';
 
   return (
     <div className="container mx-auto px-6 py-8">
@@ -140,15 +140,15 @@ export default function TicketContent({ initialTicket }: TicketContentProps) {
             
             <TicketTimeline interactions={sortedInteractions} />
             
-            {/* Only show reply form if ticket is not resolved */}
-            {!isResolved && <TicketReplyForm ticketId={ticket.ticket_id} />}
+            {/* Only show reply form if ticket is not closed or resolved */}
+            {!isTicketClosed && <TicketReplyForm ticketId={ticket.ticket_id} />}
             
-            {/* Show satisfaction rating for resolved tickets */}
-            {isResolved && (
+            {/* Show satisfaction rating for closed tickets */}
+            {isTicketClosed && (
               <SatisfactionRating
                 ticketId={ticket.ticket_id}
                 currentRating={ticket.satisfaction_score}
-                isResolved={isResolved}
+                isResolved={true}
               />
             )}
           </div>

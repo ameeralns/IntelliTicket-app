@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useRef } from 'react';
+import { useState, useRef, useEffect } from 'react';
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
@@ -25,6 +25,7 @@ import { formatDistanceToNow } from 'date-fns';
 import { createClientComponentClient } from '@supabase/auth-helpers-nextjs';
 import { useRouter } from 'next/navigation';
 import { toast } from "sonner";
+import { cn } from "@/lib/utils";
 
 interface Attachment {
   attachment_id: string;
@@ -43,6 +44,7 @@ interface Interaction {
     name: string;
   };
   attachments?: Attachment[];
+  interaction_type: string;
 }
 
 interface Ticket {
@@ -75,14 +77,93 @@ interface TicketDetailsProps {
   };
 }
 
+const interactionTypeColors: { [key: string]: { bg: string; text: string; border: string; icon: string } } = {
+  'Chat': {
+    bg: 'bg-blue-50 dark:bg-blue-900/20',
+    text: 'text-blue-700 dark:text-blue-300',
+    border: 'border-blue-100 dark:border-blue-800',
+    icon: 'text-blue-600 dark:text-blue-400'
+  },
+  'Note': {
+    bg: 'bg-purple-50 dark:bg-purple-900/20',
+    text: 'text-purple-700 dark:text-purple-300',
+    border: 'border-purple-100 dark:border-purple-800',
+    icon: 'text-purple-600 dark:text-purple-400'
+  },
+  'Email': {
+    bg: 'bg-green-50 dark:bg-green-900/20',
+    text: 'text-green-700 dark:text-green-300',
+    border: 'border-green-100 dark:border-green-800',
+    icon: 'text-green-600 dark:text-green-400'
+  },
+  'System': {
+    bg: 'bg-gray-50 dark:bg-gray-900/20',
+    text: 'text-gray-700 dark:text-gray-300',
+    border: 'border-gray-100 dark:border-gray-800',
+    icon: 'text-gray-600 dark:text-gray-400'
+  },
+  'default': {
+    bg: 'bg-gray-50 dark:bg-gray-900/20',
+    text: 'text-gray-700 dark:text-gray-300',
+    border: 'border-gray-100 dark:border-gray-800',
+    icon: 'text-gray-600 dark:text-gray-400'
+  }
+};
+
+const tagColors = [
+  {
+    bg: 'bg-blue-50 dark:bg-blue-900/20',
+    text: 'text-blue-700 dark:text-blue-300',
+    border: 'border-blue-100 dark:border-blue-800',
+    hover: 'hover:bg-blue-100 dark:hover:bg-blue-900/30'
+  },
+  {
+    bg: 'bg-purple-50 dark:bg-purple-900/20',
+    text: 'text-purple-700 dark:text-purple-300',
+    border: 'border-purple-100 dark:border-purple-800',
+    hover: 'hover:bg-purple-100 dark:hover:bg-purple-900/30'
+  },
+  {
+    bg: 'bg-pink-50 dark:bg-pink-900/20',
+    text: 'text-pink-700 dark:text-pink-300',
+    border: 'border-pink-100 dark:border-pink-800',
+    hover: 'hover:bg-pink-100 dark:hover:bg-pink-900/30'
+  },
+  {
+    bg: 'bg-indigo-50 dark:bg-indigo-900/20',
+    text: 'text-indigo-700 dark:text-indigo-300',
+    border: 'border-indigo-100 dark:border-indigo-800',
+    hover: 'hover:bg-indigo-100 dark:hover:bg-indigo-900/30'
+  },
+  {
+    bg: 'bg-teal-50 dark:bg-teal-900/20',
+    text: 'text-teal-700 dark:text-teal-300',
+    border: 'border-teal-100 dark:border-teal-800',
+    hover: 'hover:bg-teal-100 dark:hover:bg-teal-900/30'
+  }
+];
+
 export default function TicketDetailsClient({ ticket: initialTicket, session }: TicketDetailsProps) {
   const [ticket, setTicket] = useState<Ticket>(initialTicket);
   const [newInteraction, setNewInteraction] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [files, setFiles] = useState<File[]>([]);
+  const [showAllInteractions, setShowAllInteractions] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const router = useRouter();
   const supabase = createClientComponentClient();
+
+  // Clear notifications when entering the page
+  useEffect(() => {
+    const clearNotifications = async () => {
+      await supabase
+        .from('ticket_notifications')
+        .update({ is_read: true })
+        .eq('ticket_id', ticket.ticket_id);
+    };
+
+    clearNotifications();
+  }, [ticket.ticket_id]);
 
   async function handleStatusChange(newStatus: string) {
     try {
@@ -345,7 +426,7 @@ export default function TicketDetailsClient({ ticket: initialTicket, session }: 
                   value={ticket.status}
                   onValueChange={handleStatusChange}
                 >
-                  <SelectTrigger className="w-[180px] bg-white dark:bg-gray-900">
+                  <SelectTrigger className="w-[180px] bg-white dark:bg-gray-900 text-gray-900 dark:text-white font-medium border-gray-200 dark:border-gray-700">
                     <SelectValue placeholder="Update Status" />
                   </SelectTrigger>
                   <SelectContent>
@@ -362,7 +443,7 @@ export default function TicketDetailsClient({ ticket: initialTicket, session }: 
                   value={ticket.priority}
                   onValueChange={handlePriorityChange}
                 >
-                  <SelectTrigger className="w-[180px] bg-white dark:bg-gray-900">
+                  <SelectTrigger className="w-[180px] bg-white dark:bg-gray-900 text-gray-900 dark:text-white font-medium border-gray-200 dark:border-gray-700">
                     <SelectValue placeholder="Update Priority" />
                   </SelectTrigger>
                   <SelectContent>
@@ -423,65 +504,110 @@ export default function TicketDetailsClient({ ticket: initialTicket, session }: 
                 <Card className="border-0 shadow-sm">
                   <CardContent className="p-0">
                     <div className="border-b border-gray-100 dark:border-gray-700 p-6">
-                      <h2 className="text-xl font-semibold text-gray-900 dark:text-white">
-                        Interactions
-                      </h2>
+                      <div className="flex items-center justify-between">
+                        <h2 className="text-xl font-semibold text-gray-900 dark:text-white">
+                          Interactions
+                        </h2>
+                        {ticket.interactions.length > 4 && (
+                          <Button
+                            variant="ghost"
+                            onClick={() => setShowAllInteractions(!showAllInteractions)}
+                            className="text-blue-600 hover:text-blue-700 dark:text-blue-400 dark:hover:text-blue-300"
+                          >
+                            {showAllInteractions ? 'Show Recent' : 'View All'}
+                          </Button>
+                        )}
+                      </div>
                     </div>
                     
                     <div className="divide-y divide-gray-100 dark:divide-gray-700">
-                      {ticket.interactions.map((interaction: Interaction) => (
-                        <div
-                          key={interaction.interaction_id}
-                          className="p-6 hover:bg-gray-50 dark:hover:bg-gray-800/50 transition-colors"
-                        >
-                          <div className="flex gap-4">
-                            <div className="h-10 w-10 rounded-full bg-gradient-to-br from-blue-100 to-blue-50 dark:from-blue-900 dark:to-blue-800 flex items-center justify-center flex-shrink-0 border border-blue-200 dark:border-blue-700">
-                              <User className="h-5 w-5 text-blue-600 dark:text-blue-400" />
-                            </div>
-                            <div className="flex-1 space-y-2">
-                              <div className="flex items-center justify-between">
-                                <div className="font-medium text-gray-900 dark:text-white">
-                                  {interaction.agent?.name || interaction.customer?.name || 'Unknown'}
-                                </div>
-                                <div className="text-sm text-gray-500 dark:text-gray-400">
-                                  {formatDistanceToNow(new Date(interaction.created_at), { addSuffix: true })}
-                                </div>
+                      {(showAllInteractions ? ticket.interactions : ticket.interactions.slice(-4)).map((interaction: Interaction) => {
+                        const colors = interactionTypeColors[interaction.interaction_type || 'System'] || interactionTypeColors['default'];
+                        return (
+                          <div
+                            key={interaction.interaction_id}
+                            className={cn(
+                              "p-6 transition-all duration-200",
+                              colors.bg,
+                              "hover:brightness-95 dark:hover:brightness-110"
+                            )}
+                          >
+                            <div className="flex gap-4">
+                              <div className={cn(
+                                "h-10 w-10 rounded-full flex items-center justify-center flex-shrink-0",
+                                colors.bg,
+                                colors.border,
+                                "border"
+                              )}>
+                                <User className={cn("h-5 w-5", colors.icon)} />
                               </div>
-                              <p className="text-gray-600 dark:text-gray-300 whitespace-pre-wrap">
-                                {interaction.content}
-                              </p>
-                              {interaction.attachments && interaction.attachments.length > 0 && (
-                                <div className="mt-3 flex flex-wrap gap-2">
-                                  {interaction.attachments.map((attachment) => (
-                                    <a
-                                      key={attachment.attachment_id}
-                                      href={attachment.file_url}
-                                      target="_blank"
-                                      rel="noopener noreferrer"
-                                      className="flex items-center gap-2 bg-gray-50 dark:bg-gray-800 hover:bg-gray-100 dark:hover:bg-gray-700 px-3 py-2 rounded-lg border border-gray-200 dark:border-gray-700 transition-colors"
-                                    >
-                                      <Paperclip className="h-4 w-4 text-gray-500 dark:text-gray-400" />
-                                      <span className="text-sm text-gray-600 dark:text-gray-300 truncate max-w-[200px]">
-                                        {attachment.file_name}
-                                      </span>
-                                    </a>
-                                  ))}
+                              <div className="flex-1 space-y-2">
+                                <div className="flex items-center justify-between">
+                                  <div className="flex items-center gap-2">
+                                    <span className={cn("font-medium", colors.text)}>
+                                      {interaction.agent?.name || interaction.customer?.name || 'Unknown'}
+                                    </span>
+                                    <span className={cn(
+                                      "text-xs px-2 py-1 rounded-full",
+                                      colors.bg,
+                                      colors.text,
+                                      colors.border,
+                                      "border"
+                                    )}>
+                                      {interaction.interaction_type || 'System'}
+                                    </span>
+                                  </div>
+                                  <div className={cn("text-sm", colors.text)}>
+                                    {formatDistanceToNow(new Date(interaction.created_at), { addSuffix: true })}
+                                  </div>
                                 </div>
-                              )}
+                                <p className={cn(
+                                  "text-gray-600 dark:text-gray-300 whitespace-pre-wrap",
+                                  "bg-white/50 dark:bg-gray-900/50 rounded-lg p-3",
+                                  colors.border,
+                                  "border"
+                                )}>
+                                  {interaction.content}
+                                </p>
+                                {interaction.attachments && interaction.attachments.length > 0 && (
+                                  <div className="mt-3 flex flex-wrap gap-2">
+                                    {interaction.attachments.map((attachment) => (
+                                      <a
+                                        key={attachment.attachment_id}
+                                        href={attachment.file_url}
+                                        target="_blank"
+                                        rel="noopener noreferrer"
+                                        className={cn(
+                                          "flex items-center gap-2 px-3 py-2 rounded-lg transition-colors",
+                                          colors.bg,
+                                          colors.border,
+                                          "border",
+                                          "hover:brightness-95 dark:hover:brightness-110"
+                                        )}
+                                      >
+                                        <Paperclip className={cn("h-4 w-4", colors.icon)} />
+                                        <span className={cn("text-sm truncate max-w-[200px]", colors.text)}>
+                                          {attachment.file_name}
+                                        </span>
+                                      </a>
+                                    ))}
+                                  </div>
+                                )}
+                              </div>
                             </div>
                           </div>
-                        </div>
-                      ))}
+                        );
+                      })}
                     </div>
 
                     {/* New Interaction Form */}
-                    <div className="border-t border-gray-100 dark:border-gray-700 p-6 bg-gray-50 dark:bg-gray-800/50">
+                    <div className="border-t border-gray-100 dark:border-gray-700 p-6 bg-gradient-to-b from-white to-gray-50 dark:from-gray-800 dark:to-gray-900">
                       <form onSubmit={handleSubmitInteraction} className="space-y-4">
                         <Textarea
                           placeholder="Type your message..."
                           value={newInteraction}
                           onChange={(e) => setNewInteraction(e.target.value)}
-                          className="min-h-[120px] resize-none bg-white dark:bg-gray-900 border-gray-200 dark:border-gray-700 focus:ring-2 focus:ring-blue-500 dark:focus:ring-blue-400"
+                          className="min-h-[120px] resize-none bg-white dark:bg-gray-900 border-gray-200 dark:border-gray-700 focus:ring-2 focus:ring-blue-500 dark:focus:ring-blue-400 rounded-xl"
                         />
                         
                         {/* File Upload Section */}
@@ -490,15 +616,15 @@ export default function TicketDetailsClient({ ticket: initialTicket, session }: 
                             {files.map((file, index) => (
                               <div
                                 key={index}
-                                className="flex items-center gap-2 bg-white dark:bg-gray-900 px-3 py-1 rounded-lg border border-gray-200 dark:border-gray-700"
+                                className="flex items-center gap-2 bg-blue-50 dark:bg-blue-900/20 text-blue-700 dark:text-blue-300 px-3 py-1 rounded-lg border border-blue-100 dark:border-blue-800"
                               >
-                                <span className="text-sm text-gray-600 dark:text-gray-300 truncate max-w-[200px]">
+                                <span className="text-sm truncate max-w-[200px]">
                                   {file.name}
                                 </span>
                                 <button
                                   type="button"
                                   onClick={() => removeFile(index)}
-                                  className="text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200"
+                                  className="text-blue-500 hover:text-blue-700 dark:text-blue-400 dark:hover:text-blue-200"
                                 >
                                   <X className="h-4 w-4" />
                                 </button>
@@ -510,7 +636,7 @@ export default function TicketDetailsClient({ ticket: initialTicket, session }: 
                         <div className="flex items-center gap-2">
                           <Button 
                             type="submit" 
-                            className="flex-1 bg-blue-600 hover:bg-blue-700 text-white"
+                            className="flex-1 bg-gradient-to-r from-blue-600 to-blue-700 hover:from-blue-700 hover:to-blue-800 text-white shadow-lg hover:shadow-xl transition-all duration-200"
                             disabled={isSubmitting || (!newInteraction.trim() && files.length === 0)}
                           >
                             <Send className="h-4 w-4 mr-2" />
@@ -520,7 +646,7 @@ export default function TicketDetailsClient({ ticket: initialTicket, session }: 
                           <Button
                             type="button"
                             variant="outline"
-                            className="px-3"
+                            className="px-3 border-blue-200 dark:border-blue-800 hover:bg-blue-50 dark:hover:bg-blue-900/20 text-blue-700 dark:text-blue-300"
                             onClick={() => fileInputRef.current?.click()}
                           >
                             <Paperclip className="h-4 w-4" />
@@ -542,44 +668,44 @@ export default function TicketDetailsClient({ ticket: initialTicket, session }: 
               {/* Sidebar */}
               <div className="space-y-6">
                 {/* Customer Info */}
-                <Card className="border-0 shadow-sm">
+                <Card className="border-0 shadow-sm overflow-hidden">
                   <CardContent className="p-0">
-                    <div className="border-b border-gray-100 dark:border-gray-700 p-6">
-                      <h2 className="text-xl font-semibold text-gray-900 dark:text-white">
+                    <div className="border-b border-gray-100 dark:border-gray-700 p-6 bg-gradient-to-r from-purple-50 to-pink-50 dark:from-purple-900/20 dark:to-pink-900/20">
+                      <h2 className="text-xl font-semibold bg-gradient-to-r from-purple-600 to-pink-600 dark:from-purple-400 dark:to-pink-400 bg-clip-text text-transparent">
                         Customer Details
                       </h2>
                     </div>
                     
                     <div className="p-6 space-y-6">
                       <div className="flex items-start gap-4">
-                        <div className="h-16 w-16 rounded-full bg-gradient-to-br from-purple-100 to-purple-50 dark:from-purple-900 dark:to-purple-800 flex items-center justify-center border border-purple-200 dark:border-purple-700 flex-shrink-0">
-                          <User className="h-8 w-8 text-purple-600 dark:text-purple-400" />
+                        <div className="h-16 w-16 rounded-full bg-gradient-to-br from-purple-400 to-pink-400 dark:from-purple-500 dark:to-pink-500 flex items-center justify-center flex-shrink-0 shadow-lg">
+                          <User className="h-8 w-8 text-white" />
                         </div>
                         <div className="min-w-0 flex-1">
                           <div className="font-medium text-lg text-gray-900 dark:text-white truncate">
                             {ticket.customer.name}
                           </div>
-                          <div className="text-sm text-gray-500 dark:text-gray-400">
+                          <div className="text-sm text-purple-600 dark:text-purple-400 font-medium">
                             Customer
                           </div>
                         </div>
                       </div>
 
                       <div className="space-y-4 pt-4 border-t border-gray-100 dark:border-gray-700">
-                        <div className="flex items-start gap-3 text-gray-600 dark:text-gray-300">
-                          <div className="h-8 w-8 rounded-lg bg-gray-100 dark:bg-gray-800 flex items-center justify-center flex-shrink-0">
-                            <Mail className="h-4 w-4" />
+                        <div className="flex items-start gap-3">
+                          <div className="h-8 w-8 rounded-lg bg-gradient-to-br from-purple-400 to-pink-400 dark:from-purple-500 dark:to-pink-500 flex items-center justify-center flex-shrink-0 shadow-md">
+                            <Mail className="h-4 w-4 text-white" />
                           </div>
-                          <div className="min-w-0 break-all">
+                          <div className="min-w-0 break-all bg-white/50 dark:bg-gray-900/50 rounded-lg p-2 text-gray-600 dark:text-gray-300 border border-purple-100 dark:border-purple-800 flex-1">
                             {ticket.customer.email}
                           </div>
                         </div>
                         {ticket.customer.phone && (
-                          <div className="flex items-start gap-3 text-gray-600 dark:text-gray-300">
-                            <div className="h-8 w-8 rounded-lg bg-gray-100 dark:bg-gray-800 flex items-center justify-center flex-shrink-0">
-                              <Phone className="h-4 w-4" />
+                          <div className="flex items-start gap-3">
+                            <div className="h-8 w-8 rounded-lg bg-gradient-to-br from-purple-400 to-pink-400 dark:from-purple-500 dark:to-pink-500 flex items-center justify-center flex-shrink-0 shadow-md">
+                              <Phone className="h-4 w-4 text-white" />
                             </div>
-                            <div className="min-w-0 break-all">
+                            <div className="min-w-0 break-all bg-white/50 dark:bg-gray-900/50 rounded-lg p-2 text-gray-600 dark:text-gray-300 border border-purple-100 dark:border-purple-800 flex-1">
                               {ticket.customer.phone}
                             </div>
                           </div>
@@ -591,24 +717,36 @@ export default function TicketDetailsClient({ ticket: initialTicket, session }: 
 
                 {/* Tags */}
                 {ticket.ticket_tags && ticket.ticket_tags.length > 0 && (
-                  <Card className="border-0 shadow-sm">
+                  <Card className="border-0 shadow-sm overflow-hidden">
                     <CardContent className="p-0">
-                      <div className="border-b border-gray-100 dark:border-gray-700 p-6">
-                        <h2 className="text-xl font-semibold text-gray-900 dark:text-white">
+                      <div className="border-b border-gray-100 dark:border-gray-700 p-6 bg-gradient-to-r from-blue-50 to-indigo-50 dark:from-blue-900/20 dark:to-indigo-900/20">
+                        <h2 className="text-xl font-semibold bg-gradient-to-r from-blue-600 to-indigo-600 dark:from-blue-400 dark:to-indigo-400 bg-clip-text text-transparent">
                           Tags
                         </h2>
                       </div>
                       
-                      <div className="p-6">
+                      <div className="p-6 bg-gradient-to-b from-white to-gray-50 dark:from-gray-800 dark:to-gray-900">
                         <div className="flex flex-wrap gap-2">
-                          {ticket.ticket_tags.map((tag: any, index: number) => (
-                            <span
-                              key={index}
-                              className="px-3 py-1.5 rounded-lg text-sm font-medium bg-gray-100 text-gray-700 dark:bg-gray-800 dark:text-gray-300 border border-gray-200 dark:border-gray-700"
-                            >
-                              {tag.tag.name}
-                            </span>
-                          ))}
+                          {ticket.ticket_tags.map((tag: any, index: number) => {
+                            const colorIndex = index % tagColors.length;
+                            const color = tagColors[colorIndex];
+                            return (
+                              <span
+                                key={index}
+                                className={cn(
+                                  "px-3 py-1.5 rounded-lg text-sm font-medium transition-colors duration-200",
+                                  color.bg,
+                                  color.text,
+                                  color.border,
+                                  color.hover,
+                                  "border",
+                                  "shadow-sm"
+                                )}
+                              >
+                                {tag.tag.name}
+                              </span>
+                            );
+                          })}
                         </div>
                       </div>
                     </CardContent>

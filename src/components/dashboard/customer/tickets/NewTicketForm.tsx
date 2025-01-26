@@ -2,7 +2,7 @@
 
 import { useState } from 'react';
 import { createClientComponentClient } from '@supabase/auth-helpers-nextjs';
-import { Tag, Loader2, Upload } from 'lucide-react';
+import { Tag, Loader2 } from 'lucide-react';
 import { toast } from 'react-hot-toast';
 import { useRouter } from 'next/navigation';
 
@@ -14,73 +14,19 @@ interface NewTicketFormProps {
   }[];
 }
 
-interface FileUpload {
-  file: File;
-  progress: number;
-}
-
 export default function NewTicketForm({ customerId, availableTags }: NewTicketFormProps) {
   const [selectedTags, setSelectedTags] = useState<string[]>([]);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [fileUploads, setFileUploads] = useState<FileUpload[]>([]);
   const router = useRouter();
   const supabase = createClientComponentClient();
 
-  const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const files = e.target.files;
-    if (!files) return;
-
-    // Convert FileList to array and add progress property
-    const newFiles = Array.from(files).map(file => ({
-      file,
-      progress: 0
-    }));
-
-    setFileUploads(prev => [...prev, ...newFiles]);
-  };
-
-  const uploadFile = async (fileUpload: FileUpload) => {
-    const { file } = fileUpload;
-    const fileExt = file.name.split('.').pop();
-    const fileName = `${Date.now()}.${fileExt}`;
-
-    try {
-      console.log('Starting file upload:', fileName);
-      console.log('File details:', {
-        name: file.name,
-        size: file.size,
-        type: file.type
-      });
-
-      const { data: session } = await supabase.auth.getSession();
-      console.log('Current session:', session?.user?.id);
-
-      const { error: uploadError, data } = await supabase.storage
-        .from('ticket-attachments')
-        .upload(fileName, file);
-
-      if (uploadError) {
-        console.error('Upload error details:', {
-          statusCode: uploadError.statusCode,
-          message: uploadError.message,
-          error: uploadError.error
-        });
-        throw uploadError;
-      }
-
-      console.log('Upload successful:', data);
-
-      return {
-        file_name: file.name,
-        file_size: file.size,
-        file_type: file.type,
-        storage_path: fileName
-      };
-    } catch (error) {
-      console.error('Error uploading file - Full error:', error);
-      throw error;
-    }
+  const handleTagToggle = (tagId: string) => {
+    setSelectedTags(prev =>
+      prev.includes(tagId)
+        ? prev.filter(id => id !== tagId)
+        : [...prev, tagId]
+    );
   };
 
   const handleSubmit = async (e: React.FormEvent<HTMLFormElement>) => {
@@ -92,9 +38,7 @@ export default function NewTicketForm({ customerId, availableTags }: NewTicketFo
     const formData = new FormData(form);
 
     try {
-      console.log('Starting ticket creation...');
-      
-      // Create the ticket first
+      // Create the ticket
       const { data: ticket, error: ticketError } = await supabase
         .from('tickets')
         .insert({
@@ -107,55 +51,24 @@ export default function NewTicketForm({ customerId, availableTags }: NewTicketFo
         .select()
         .single();
 
-      if (ticketError) {
-        console.error('Ticket creation error:', ticketError);
-        throw ticketError;
-      }
-
-      console.log('Ticket created successfully:', ticket);
-
-      // Upload files and create attachment records
-      if (fileUploads.length > 0) {
-        console.log('Starting file uploads for ticket:', ticket.ticket_id);
-        
-        for (const fileUpload of fileUploads) {
-          try {
-            const attachmentData = await uploadFile(fileUpload);
-            console.log('File uploaded, creating attachment record:', attachmentData);
-            
-            const { error: attachmentError } = await supabase
-              .from('ticket_attachments')
-              .insert({
-                ticket_id: ticket.ticket_id,
-                ...attachmentData,
-                uploaded_by: customerId
-              });
-
-            if (attachmentError) {
-              console.error('Attachment record error:', attachmentError);
-              throw attachmentError;
-            }
-          } catch (error) {
-            console.error('File upload/attachment error:', error);
-            throw error;
-          }
-        }
-      }
+      if (ticketError) throw ticketError;
 
       // Add tags if selected
       if (selectedTags.length > 0) {
-        console.log('Adding tags to ticket:', selectedTags);
-        
-        const tagPromises = selectedTags.map((tagId) =>
-          supabase
-            .from('ticket_tags')
-            .insert({
-              ticket_id: ticket.ticket_id,
-              tag_id: tagId
-            })
-        );
+        const tagData = selectedTags.map(tagId => ({
+          ticket_id: ticket.ticket_id,
+          tag_id: tagId
+        }));
 
-        await Promise.all(tagPromises);
+        const { error: tagsError } = await supabase
+          .from('ticket_tags')
+          .insert(tagData);
+
+        if (tagsError) {
+          console.error('Error adding tags:', tagsError);
+          // Don't throw here - we want to proceed even if tag addition fails
+          toast.error('Ticket created but failed to add some tags');
+        }
       }
 
       toast.success('Ticket created successfully');
@@ -187,6 +100,7 @@ export default function NewTicketForm({ customerId, availableTags }: NewTicketFo
           id="title"
           name="title"
           required
+          maxLength={255}
           className="w-full bg-gray-700 text-white rounded-lg px-4 py-2 focus:ring-2 focus:ring-blue-500"
           placeholder="Brief description of the issue"
         />
@@ -216,8 +130,10 @@ export default function NewTicketForm({ customerId, availableTags }: NewTicketFo
           id="priority"
           name="priority"
           required
+          defaultValue=""
           className="w-full bg-gray-700 text-white rounded-lg px-4 py-2 focus:ring-2 focus:ring-blue-500"
         >
+          <option value="" disabled>Select priority level</option>
           <option value="Low">Low</option>
           <option value="Medium">Medium</option>
           <option value="High">High</option>
@@ -225,84 +141,32 @@ export default function NewTicketForm({ customerId, availableTags }: NewTicketFo
         </select>
       </div>
 
-      {/* File Attachments */}
-      <div>
-        <label className="block text-sm font-medium text-gray-300 mb-2">
-          Attachments
-        </label>
-        <div className="space-y-4">
-          <div className="flex items-center justify-center w-full">
-            <label className="flex flex-col items-center justify-center w-full h-32 border-2 border-gray-600 border-dashed rounded-lg cursor-pointer bg-gray-700 hover:bg-gray-600">
-              <div className="flex flex-col items-center justify-center pt-5 pb-6">
-                <Upload className="w-8 h-8 mb-2 text-gray-400" />
-                <p className="mb-2 text-sm text-gray-400">
-                  <span className="font-semibold">Click to upload</span> or drag and drop
-                </p>
-                <p className="text-xs text-gray-500">
-                  Any file up to 10MB
-                </p>
-              </div>
-              <input
-                type="file"
-                className="hidden"
-                multiple
-                onChange={handleFileChange}
-                accept="image/*,.pdf,.doc,.docx,.txt"
-              />
-            </label>
-          </div>
-
-          {/* File List */}
-          {fileUploads.length > 0 && (
-            <div className="space-y-2">
-              {fileUploads.map((fileUpload, index) => (
-                <div
-                  key={index}
-                  className="flex items-center justify-between bg-gray-700 p-2 rounded-lg"
-                >
-                  <span className="text-sm text-gray-300 truncate">
-                    {fileUpload.file.name}
-                  </span>
-                  <button
-                    type="button"
-                    onClick={() => setFileUploads(prev => prev.filter((_, i) => i !== index))}
-                    className="text-red-400 hover:text-red-300"
-                  >
-                    Remove
-                  </button>
-                </div>
-              ))}
-            </div>
-          )}
-        </div>
-      </div>
-
       {/* Tags */}
       <div>
         <label className="block text-sm font-medium text-gray-300 mb-2">
-          Tags
+          Tags (Optional)
         </label>
-        <div className="flex flex-wrap gap-2">
-          {availableTags.map((tag) => (
-            <button
-              key={tag.tag_id}
-              type="button"
-              onClick={() => setSelectedTags(prev =>
-                prev.includes(tag.tag_id)
-                  ? prev.filter(id => id !== tag.tag_id)
-                  : [...prev, tag.tag_id]
-              )}
-              className={`inline-flex items-center px-3 py-1 rounded-full text-sm ${
-                selectedTags.includes(tag.tag_id)
-                  ? 'bg-blue-500 text-white'
-                  : 'bg-gray-700 text-gray-300 hover:bg-gray-600'
-              }`}
-            >
-              <Tag className="w-4 h-4 mr-1" />
-              {tag.name}
-            </button>
-          ))}
-        </div>
+        {availableTags.length > 0 ? (
+          <div className="flex flex-wrap gap-2">
+            {availableTags.map((tag) => (
+              <button
+                key={tag.tag_id}
+                type="button"
+                onClick={() => handleTagToggle(tag.tag_id)}
+                className={`inline-flex items-center px-3 py-1.5 rounded-full text-sm font-medium transition-colors ${
+                  selectedTags.includes(tag.tag_id)
+                    ? 'bg-blue-500 text-white hover:bg-blue-600'
+                    : 'bg-gray-700 text-gray-300 hover:bg-gray-600'
+                }`}
+              >
+                <Tag className="w-4 h-4 mr-1.5" />
+                {tag.name}
+              </button>
+            ))}
+          </div>
+        ) : (
+          <p className="text-sm text-gray-400">No tags available</p>
+        )}
       </div>
 
       {/* Submit Button */}
@@ -310,11 +174,11 @@ export default function NewTicketForm({ customerId, availableTags }: NewTicketFo
         <button
           type="submit"
           disabled={isSubmitting}
-          className="bg-blue-500 text-white px-6 py-2 rounded-lg hover:bg-blue-600 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 focus:ring-offset-gray-800 disabled:opacity-50 disabled:cursor-not-allowed"
+          className="inline-flex items-center px-6 py-2.5 rounded-lg font-medium text-white bg-blue-500 hover:bg-blue-600 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 focus:ring-offset-gray-800 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
         >
           {isSubmitting ? (
             <>
-              <Loader2 className="w-4 h-4 mr-2 animate-spin inline" />
+              <Loader2 className="w-4 h-4 mr-2 animate-spin" />
               Creating...
             </>
           ) : (

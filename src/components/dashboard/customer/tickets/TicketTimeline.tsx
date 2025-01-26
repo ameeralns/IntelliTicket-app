@@ -1,5 +1,6 @@
-import { MessageCircle, Mail, Phone } from 'lucide-react';
+import { MessageCircle, Mail, Phone, ChevronDown, ChevronUp } from 'lucide-react';
 import { formatDistanceToNow } from 'date-fns';
+import { useState } from 'react';
 
 interface Interaction {
   interaction_id: string;
@@ -15,6 +16,12 @@ interface TicketTimelineProps {
 }
 
 export default function TicketTimeline({ interactions }: TicketTimelineProps) {
+  const [isExpanded, setIsExpanded] = useState(false);
+  
+  const displayedInteractions = isExpanded 
+    ? interactions 
+    : interactions.slice(-4);
+
   const getInteractionIcon = (type: Interaction['interaction_type']) => {
     switch (type) {
       case 'Email':
@@ -51,9 +58,29 @@ export default function TicketTimeline({ interactions }: TicketTimelineProps) {
 
   return (
     <div className="bg-gray-800 rounded-lg p-6">
-      <h2 className="text-lg font-semibold text-white mb-6">Ticket Timeline</h2>
+      <div className="flex justify-between items-center mb-6">
+        <h2 className="text-lg font-semibold text-white">Ticket Timeline</h2>
+        {interactions.length > 4 && (
+          <button
+            onClick={() => setIsExpanded(!isExpanded)}
+            className="flex items-center gap-2 text-sm text-blue-400 hover:text-blue-300 transition-colors"
+          >
+            {isExpanded ? (
+              <>
+                Show Less
+                <ChevronUp className="w-4 h-4" />
+              </>
+            ) : (
+              <>
+                View All ({interactions.length})
+                <ChevronDown className="w-4 h-4" />
+              </>
+            )}
+          </button>
+        )}
+      </div>
       <div className="space-y-6">
-        {interactions.map((interaction) => (
+        {displayedInteractions.map((interaction) => (
           <div key={interaction.interaction_id} className="relative">
             {/* Timeline line */}
             <div className="absolute left-6 top-10 bottom-0 w-px bg-gray-700" />

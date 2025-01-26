@@ -28,26 +28,29 @@ interface Agent {
 }
 
 interface TeamDetailsModalProps {
+  isOpen: boolean;
   team: TeamWithAgentCount;
   onClose: () => void;
   onAgentRemoved: () => void;
 }
 
-function TeamDetailsModal({ team, onClose, onAgentRemoved }: TeamDetailsModalProps) {
+function TeamDetailsModal({ isOpen, team, onClose, onAgentRemoved }: TeamDetailsModalProps) {
   const [loading, setLoading] = useState(true);
   const [agents, setAgents] = useState<Agent[]>([]);
+  const [availableAgents, setAvailableAgents] = useState<Agent[]>([]);
+  const [selectedAgent, setSelectedAgent] = useState<string>('');
   const [error, setError] = useState<string | null>(null);
   const [processing, setProcessing] = useState(false);
+  const supabase = createClientComponentClient();
 
   useEffect(() => {
     fetchTeamAgents();
+    fetchAvailableAgents();
   }, [team.team_id]);
 
   const fetchTeamAgents = async () => {
     try {
       setLoading(true);
-      const supabase = createClientComponentClient();
-
       const { data, error } = await supabase
         .from('agents')
         .select('agent_id, name, email, role')
@@ -64,11 +67,39 @@ function TeamDetailsModal({ team, onClose, onAgentRemoved }: TeamDetailsModalPro
     }
   };
 
+  const fetchAvailableAgents = async () => {
+    try {
+      const { data: { session } } = await supabase.auth.getSession();
+      if (!session?.user?.email) throw new Error('No authenticated user found');
+
+      // Get the organization_id from the agents table
+      const { data: currentAgent, error: agentError } = await supabase
+        .from('agents')
+        .select('organization_id')
+        .eq('email', session.user.email)
+        .single();
+      
+      if (agentError) throw agentError;
+
+      // Fetch agents without a team from the same organization
+      const { data, error } = await supabase
+        .from('agents')
+        .select('agent_id, name, email, role')
+        .eq('organization_id', currentAgent.organization_id)
+        .is('team_id', null);
+
+      if (error) throw error;
+
+      setAvailableAgents(data || []);
+    } catch (error) {
+      console.error('Error fetching available agents:', error);
+      setError('Failed to load available agents');
+    }
+  };
+
   const handleRemoveAgent = async (agentId: string) => {
     try {
       setProcessing(true);
-      const supabase = createClientComponentClient();
-
       const { error } = await supabase
         .from('agents')
         .update({ team_id: null })
@@ -77,6 +108,7 @@ function TeamDetailsModal({ team, onClose, onAgentRemoved }: TeamDetailsModalPro
       if (error) throw error;
 
       setAgents(agents.filter(agent => agent.agent_id !== agentId));
+      setAvailableAgents([...availableAgents, agents.find(agent => agent.agent_id === agentId)!]);
       onAgentRemoved();
     } catch (error) {
       console.error('Error removing agent:', error);
@@ -86,79 +118,164 @@ function TeamDetailsModal({ team, onClose, onAgentRemoved }: TeamDetailsModalPro
     }
   };
 
+  const handleAddAgent = async () => {
+    if (!selectedAgent) return;
+
+    try {
+      setProcessing(true);
+      const { error } = await supabase
+        .from('agents')
+        .update({ team_id: team.team_id })
+        .eq('agent_id', selectedAgent);
+
+      if (error) throw error;
+
+      const addedAgent = availableAgents.find(agent => agent.agent_id === selectedAgent)!;
+      setAgents([...agents, addedAgent]);
+      setAvailableAgents(availableAgents.filter(agent => agent.agent_id !== selectedAgent));
+      setSelectedAgent('');
+      onAgentRemoved(); // This will update the agent count in the parent component
+    } catch (error) {
+      console.error('Error adding agent:', error);
+      setError('Failed to add team member');
+    } finally {
+      setProcessing(false);
+    }
+  };
+
+  if (!isOpen) return null;
+
   return (
     <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50">
-      <div className="bg-white rounded-lg max-w-2xl w-full p-6">
-        <div className="flex justify-between items-center mb-6">
+      <div className="bg-white rounded-xl max-w-2xl w-full p-6 shadow-2xl">
+        <div className="flex justify-between items-center mb-8">
           <div>
-            <h2 className="text-xl font-semibold text-gray-900">{team.name}</h2>
-            <p className="text-sm text-gray-500 mt-1">{team.description || 'No description'}</p>
+            <div className="flex items-center gap-3">
+              <div className="h-12 w-12 rounded-xl bg-gradient-to-br from-blue-500 to-indigo-600 flex items-center justify-center">
+                <Users className="h-6 w-6 text-white" />
+              </div>
+              <div>
+                <h2 className="text-2xl font-bold text-gray-900">{team.name}</h2>
+                <p className="text-sm text-gray-500 mt-1">{team.description || 'No description'}</p>
+              </div>
+            </div>
           </div>
-          <button onClick={onClose} className="text-gray-400 hover:text-gray-600">
-            <X className="h-5 w-5" />
+          <button onClick={onClose} className="text-gray-400 hover:text-gray-600 transition-colors">
+            <X className="h-6 w-6" />
           </button>
         </div>
 
-        <div className="mb-6">
-          <div className="flex items-center justify-between mb-4">
-            <h3 className="text-lg font-medium text-gray-900">Team Members</h3>
-            <span className="text-sm text-gray-500">{agents.length} members</span>
+        <div className="space-y-8">
+          {/* Add Agent Section */}
+          <div className="bg-gradient-to-br from-blue-50 to-indigo-50 p-6 rounded-xl border border-blue-100">
+            <h3 className="text-lg font-semibold text-gray-900 mb-4">Add Team Member</h3>
+            <div className="flex gap-3">
+              <select
+                value={selectedAgent}
+                onChange={(e) => setSelectedAgent(e.target.value)}
+                className="flex-1 rounded-lg border border-gray-200 bg-white py-2.5 pl-3 pr-10 text-sm focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500 shadow-sm"
+                disabled={processing}
+              >
+                <option value="">Select an agent...</option>
+                {availableAgents.map((agent) => (
+                  <option key={agent.agent_id} value={agent.agent_id}>
+                    {agent.name} - {agent.email}
+                  </option>
+                ))}
+              </select>
+              <button
+                onClick={handleAddAgent}
+                disabled={!selectedAgent || processing}
+                className="px-5 py-2.5 text-sm font-medium text-white bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-700 hover:to-indigo-700 rounded-lg disabled:opacity-50 disabled:cursor-not-allowed flex items-center shadow-sm transition-all duration-200 hover:shadow-md"
+              >
+                {processing ? (
+                  <Loader2 className="h-4 w-4 animate-spin" />
+                ) : (
+                  <>
+                    <Plus className="h-4 w-4 mr-2" />
+                    Add
+                  </>
+                )}
+              </button>
+            </div>
           </div>
 
-          {loading ? (
-            <div className="flex justify-center py-4">
-              <Loader2 className="h-6 w-6 animate-spin text-primary" />
+          {/* Team Members Section */}
+          <div>
+            <div className="flex items-center justify-between mb-6">
+              <h3 className="text-lg font-semibold text-gray-900">Team Members</h3>
+              <span className="px-3 py-1 text-sm font-medium text-blue-600 bg-blue-100 rounded-full">
+                {agents.length} members
+              </span>
             </div>
-          ) : error ? (
-            <div className="text-center py-4">
-              <p className="text-red-500">{error}</p>
-            </div>
-          ) : agents.length === 0 ? (
-            <div className="text-center py-8 bg-gray-50 rounded-lg">
-              <Users className="h-8 w-8 text-gray-400 mx-auto mb-2" />
-              <p className="text-gray-500">No team members yet</p>
-            </div>
-          ) : (
-            <div className="space-y-3">
-              {agents.map((agent) => (
-                <div
-                  key={agent.agent_id}
-                  className="flex items-center justify-between bg-gray-50 p-4 rounded-lg"
-                >
-                  <div>
-                    <p className="font-medium text-gray-900">{agent.name}</p>
-                    <p className="text-sm text-gray-500">{agent.email}</p>
-                    <span className="text-xs text-primary bg-primary/10 px-2 py-1 rounded-full">
-                      {agent.role}
-                    </span>
-                  </div>
-                  <button
-                    onClick={() => handleRemoveAgent(agent.agent_id)}
-                    disabled={processing}
-                    className="text-gray-400 hover:text-red-600 disabled:opacity-50"
-                    title="Remove from team"
-                  >
-                    {processing ? (
-                      <Loader2 className="h-5 w-5 animate-spin" />
-                    ) : (
-                      <UserMinus className="h-5 w-5" />
-                    )}
-                  </button>
-                </div>
-              ))}
-            </div>
-          )}
-        </div>
 
-        <div className="border-t border-gray-200 pt-4">
-          <div className="grid grid-cols-2 gap-4 text-sm text-gray-500">
-            <div>
-              <p>Created</p>
-              <p className="text-gray-900">{new Date(team.created_at).toLocaleString()}</p>
-            </div>
-            <div>
-              <p>Last Updated</p>
-              <p className="text-gray-900">{new Date(team.updated_at).toLocaleString()}</p>
+            {loading ? (
+              <div className="flex justify-center py-8">
+                <Loader2 className="h-8 w-8 animate-spin text-blue-600" />
+              </div>
+            ) : error ? (
+              <div className="text-center py-8">
+                <p className="text-red-500">{error}</p>
+              </div>
+            ) : agents.length === 0 ? (
+              <div className="text-center py-12 bg-gradient-to-br from-blue-50 to-indigo-50 rounded-xl border-2 border-dashed border-blue-200">
+                <Users className="h-12 w-12 text-blue-400 mx-auto mb-3" />
+                <p className="text-gray-500 font-medium">No team members yet</p>
+                <p className="text-gray-400 text-sm mt-1">Add agents to get started</p>
+              </div>
+            ) : (
+              <div className="grid gap-4">
+                {agents.map((agent) => (
+                  <div
+                    key={agent.agent_id}
+                    className="flex items-center justify-between bg-gradient-to-br from-blue-50 to-indigo-50/50 p-4 rounded-xl border border-blue-100 hover:shadow-sm transition-shadow group"
+                  >
+                    <div className="flex items-center gap-4">
+                      <div className="h-10 w-10 rounded-full bg-gradient-to-br from-blue-500 to-indigo-600 flex items-center justify-center">
+                        <span className="text-lg font-semibold text-white">
+                          {agent.name.charAt(0).toUpperCase()}
+                        </span>
+                      </div>
+                      <div>
+                        <p className="font-medium text-gray-900">{agent.name}</p>
+                        <p className="text-sm text-gray-500">{agent.email}</p>
+                        <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-blue-100 text-blue-700 mt-1">
+                          {agent.role}
+                        </span>
+                      </div>
+                    </div>
+                    <button
+                      onClick={() => handleRemoveAgent(agent.agent_id)}
+                      disabled={processing}
+                      className="text-gray-400 hover:text-red-600 disabled:opacity-50 opacity-0 group-hover:opacity-100 transition-opacity"
+                      title="Remove from team"
+                    >
+                      {processing ? (
+                        <Loader2 className="h-5 w-5 animate-spin" />
+                      ) : (
+                        <UserMinus className="h-5 w-5" />
+                      )}
+                    </button>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+
+          <div className="border-t border-gray-200 pt-6">
+            <div className="grid grid-cols-2 gap-6">
+              <div className="bg-gradient-to-br from-blue-50 to-indigo-50 p-4 rounded-xl">
+                <p className="text-sm font-medium text-gray-500">Created</p>
+                <p className="text-sm font-medium text-gray-900 mt-1">
+                  {new Date(team.created_at).toLocaleString()}
+                </p>
+              </div>
+              <div className="bg-gradient-to-br from-blue-50 to-indigo-50 p-4 rounded-xl">
+                <p className="text-sm font-medium text-gray-500">Last Updated</p>
+                <p className="text-sm font-medium text-gray-900 mt-1">
+                  {new Date(team.updated_at).toLocaleString()}
+                </p>
+              </div>
             </div>
           </div>
         </div>
@@ -333,30 +450,39 @@ export default function TeamsPage() {
       {/* Header */}
       <div className="flex justify-between items-center mb-8">
         <div>
-          <h1 className="text-3xl font-bold text-gray-900 tracking-tight">Teams</h1>
+          <h1 className="text-3xl font-bold text-gray-900 tracking-tight flex items-center gap-3">
+            <div className="h-10 w-10 rounded-xl bg-gradient-to-br from-primary/10 to-primary/30 flex items-center justify-center">
+              <Users className="h-6 w-6 text-primary" />
+            </div>
+            Teams
+          </h1>
           <p className="mt-2 text-base text-gray-600">
-            Manage your organization's teams
+            Manage your organization's teams and their members
           </p>
         </div>
         <button
           onClick={() => setShowCreateModal(true)}
-          className="inline-flex items-center px-8 py-4 text-lg font-bold text-gray-900 bg-white hover:bg-gray-50 rounded-xl shadow-xl hover:shadow-2xl transform transition-all duration-200 hover:scale-105 active:scale-95 ring-2 ring-primary border border-primary"
+          className="inline-flex items-center px-6 py-3 text-base font-medium text-white bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-700 hover:to-indigo-700 rounded-xl shadow-lg hover:shadow-xl transform transition-all duration-200 hover:scale-105 active:scale-95"
         >
-          <Plus className="h-6 w-6 mr-2 text-primary" />
+          <Plus className="h-5 w-5 mr-2" />
           Create New Team
         </button>
       </div>
 
       {/* Empty state when no teams exist */}
       {teams.length === 0 && !loading && !error && (
-        <div className="text-center py-12 bg-white rounded-lg border-2 border-dashed border-gray-300">
-          <Users className="mx-auto h-12 w-12 text-gray-400" />
-          <h3 className="mt-2 text-xl font-semibold text-gray-900">No teams yet</h3>
-          <p className="mt-2 text-base text-gray-600">Get started by creating a new team for your organization.</p>
-          <div className="mt-6">
+        <div className="text-center py-16 bg-gradient-to-br from-blue-50 to-indigo-50 rounded-2xl border-2 border-dashed border-blue-200">
+          <div className="h-16 w-16 rounded-2xl bg-gradient-to-br from-blue-500 to-indigo-600 flex items-center justify-center mx-auto mb-4">
+            <Users className="h-8 w-8 text-white" />
+          </div>
+          <h3 className="text-2xl font-bold text-gray-900 mb-2">No teams yet</h3>
+          <p className="text-base text-gray-600 max-w-sm mx-auto">
+            Get started by creating a new team for your organization.
+          </p>
+          <div className="mt-8">
             <button
               onClick={() => setShowCreateModal(true)}
-              className="inline-flex items-center px-6 py-3 border border-transparent rounded-lg shadow-md text-base font-semibold text-white bg-primary hover:bg-primary/90 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-primary"
+              className="inline-flex items-center px-6 py-3 text-base font-medium text-white bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-700 hover:to-indigo-700 rounded-xl shadow-lg hover:shadow-xl transform transition-all duration-200 hover:scale-105 active:scale-95"
             >
               <Plus className="h-5 w-5 mr-2" />
               Create Your First Team
@@ -371,7 +497,7 @@ export default function TeamsPage() {
           {teams.map((team) => (
             <div
               key={team.team_id}
-              className="bg-white rounded-lg shadow-sm border border-gray-200 p-6 cursor-pointer hover:shadow-md transition-shadow"
+              className="group bg-gradient-to-br from-blue-50 to-indigo-50 rounded-xl border border-blue-100 p-6 cursor-pointer hover:shadow-xl transition-all duration-200 hover:scale-[1.02] hover:border-blue-200"
               onClick={() => {
                 setSelectedTeam(team);
                 setShowDetailsModal(true);
@@ -379,10 +505,15 @@ export default function TeamsPage() {
             >
               <div className="flex justify-between items-start">
                 <div>
-                  <h3 className="text-xl font-semibold text-gray-900">{team.name}</h3>
-                  <p className="mt-2 text-base text-gray-600">{team.description || 'No description'}</p>
+                  <div className="flex items-center gap-3 mb-3">
+                    <div className="h-10 w-10 rounded-xl bg-gradient-to-br from-blue-500 to-indigo-600 flex items-center justify-center">
+                      <Users className="h-5 w-5 text-white" />
+                    </div>
+                    <h3 className="text-xl font-bold text-gray-900">{team.name}</h3>
+                  </div>
+                  <p className="text-base text-gray-600">{team.description || 'No description'}</p>
                 </div>
-                <div className="flex space-x-2" onClick={(e) => e.stopPropagation()}>
+                <div className="flex space-x-2 opacity-0 group-hover:opacity-100 transition-opacity" onClick={(e) => e.stopPropagation()}>
                   <button
                     onClick={() => {
                       setSelectedTeam(team);
@@ -392,7 +523,7 @@ export default function TeamsPage() {
                       });
                       setShowEditModal(true);
                     }}
-                    className="text-gray-500 hover:text-primary"
+                    className="p-2 text-gray-500 hover:text-blue-600 hover:bg-blue-100 rounded-lg transition-colors"
                   >
                     <Pencil className="h-5 w-5" />
                   </button>
@@ -401,18 +532,21 @@ export default function TeamsPage() {
                       setSelectedTeam(team);
                       setShowDeleteModal(true);
                     }}
-                    className="text-gray-500 hover:text-red-600"
+                    className="p-2 text-gray-500 hover:text-red-600 hover:bg-red-50 rounded-lg transition-colors"
                   >
                     <Trash2 className="h-5 w-5" />
                   </button>
                 </div>
               </div>
-              <div className="mt-4 flex items-center text-base text-gray-600">
-                <Users className="h-5 w-5 mr-2" />
-                {team.agent_count} {team.agent_count === 1 ? 'agent' : 'agents'}
-              </div>
-              <div className="mt-4 text-sm text-gray-500">
-                Created {new Date(team.created_at).toLocaleDateString()}
+              <div className="mt-6 flex items-center gap-4">
+                <div className="flex items-center text-base text-gray-600">
+                  <Users className="h-5 w-5 mr-2 text-blue-600" />
+                  <span className="font-medium">{team.agent_count}</span>
+                  <span className="ml-1">{team.agent_count === 1 ? 'agent' : 'agents'}</span>
+                </div>
+                <div className="text-sm text-gray-500">
+                  Created {new Date(team.created_at).toLocaleDateString()}
+                </div>
               </div>
             </div>
           ))}
@@ -421,36 +555,41 @@ export default function TeamsPage() {
 
       {/* Create Modal */}
       {showCreateModal && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4">
-          <div className="bg-white rounded-lg max-w-md w-full p-6">
-            <div className="flex justify-between items-center mb-4">
-              <h2 className="text-xl font-semibold">Create New Team</h2>
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50">
+          <div className="bg-white rounded-xl max-w-md w-full p-6 shadow-2xl">
+            <div className="flex justify-between items-center mb-6">
+              <div className="flex items-center gap-3">
+                <div className="h-10 w-10 rounded-xl bg-gradient-to-br from-blue-500 to-indigo-600 flex items-center justify-center">
+                  <Users className="h-5 w-5 text-white" />
+                </div>
+                <h2 className="text-xl font-bold text-gray-900">Create New Team</h2>
+              </div>
               <button onClick={() => setShowCreateModal(false)} className="text-gray-400 hover:text-gray-600">
                 <X className="h-5 w-5" />
               </button>
             </div>
-            <div className="space-y-4">
+            <div className="space-y-6">
               <div>
-                <label className="block text-sm font-medium text-gray-700">Team Name</label>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Team Name</label>
                 <input
                   type="text"
                   value={formData.name}
                   onChange={(e) => setFormData({ ...formData, name: e.target.value })}
-                  className="mt-1 block w-full rounded-md border border-gray-300 px-3 py-2 focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary"
+                  className="block w-full rounded-lg border border-gray-200 px-4 py-3 text-sm focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500 shadow-sm"
                   placeholder="Enter team name"
                 />
               </div>
               <div>
-                <label className="block text-sm font-medium text-gray-700">Description</label>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Description</label>
                 <textarea
                   value={formData.description}
                   onChange={(e) => setFormData({ ...formData, description: e.target.value })}
-                  className="mt-1 block w-full rounded-md border border-gray-300 px-3 py-2 focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary"
+                  className="block w-full rounded-lg border border-gray-200 px-4 py-3 text-sm focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500 shadow-sm"
                   placeholder="Enter team description"
                   rows={3}
                 />
               </div>
-              <div className="flex justify-end space-x-3">
+              <div className="flex justify-end gap-3">
                 <button
                   onClick={() => setShowCreateModal(false)}
                   className="px-4 py-2 text-sm font-medium text-gray-700 hover:text-gray-900"
@@ -460,14 +599,16 @@ export default function TeamsPage() {
                 <button
                   onClick={handleCreateTeam}
                   disabled={processing || !formData.name}
-                  className="inline-flex items-center px-4 py-2 border border-transparent rounded-md shadow-sm text-sm font-medium text-white bg-primary hover:bg-primary/90 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-primary disabled:opacity-50 disabled:cursor-not-allowed"
+                  className="px-4 py-2 text-sm font-medium text-white bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-700 hover:to-indigo-700 rounded-lg shadow-sm hover:shadow-md disabled:opacity-50 disabled:cursor-not-allowed transition-all duration-200"
                 >
                   {processing ? (
-                    <Loader2 className="h-4 w-4 animate-spin mr-2" />
+                    <Loader2 className="h-4 w-4 animate-spin" />
                   ) : (
-                    <Plus className="h-4 w-4 mr-2" />
+                    <>
+                      <Plus className="h-4 w-4 mr-2 inline-block" />
+                      Create Team
+                    </>
                   )}
-                  Create Team
                 </button>
               </div>
             </div>
@@ -477,34 +618,39 @@ export default function TeamsPage() {
 
       {/* Edit Modal */}
       {showEditModal && selectedTeam && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4">
-          <div className="bg-white rounded-lg max-w-md w-full p-6">
-            <div className="flex justify-between items-center mb-4">
-              <h2 className="text-xl font-semibold">Edit Team</h2>
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50">
+          <div className="bg-white rounded-xl max-w-md w-full p-6 shadow-2xl">
+            <div className="flex justify-between items-center mb-6">
+              <div className="flex items-center gap-3">
+                <div className="h-10 w-10 rounded-xl bg-gradient-to-br from-blue-500 to-indigo-600 flex items-center justify-center">
+                  <Pencil className="h-5 w-5 text-white" />
+                </div>
+                <h2 className="text-xl font-bold text-gray-900">Edit Team</h2>
+              </div>
               <button onClick={() => setShowEditModal(false)} className="text-gray-400 hover:text-gray-600">
                 <X className="h-5 w-5" />
               </button>
             </div>
-            <div className="space-y-4">
+            <div className="space-y-6">
               <div>
-                <label className="block text-sm font-medium text-gray-700">Team Name</label>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Team Name</label>
                 <input
                   type="text"
                   value={formData.name}
                   onChange={(e) => setFormData({ ...formData, name: e.target.value })}
-                  className="mt-1 block w-full rounded-md border border-gray-300 px-3 py-2 focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary"
+                  className="block w-full rounded-lg border border-gray-200 px-4 py-3 text-sm focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500 shadow-sm"
                 />
               </div>
               <div>
-                <label className="block text-sm font-medium text-gray-700">Description</label>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Description</label>
                 <textarea
                   value={formData.description}
                   onChange={(e) => setFormData({ ...formData, description: e.target.value })}
-                  className="mt-1 block w-full rounded-md border border-gray-300 px-3 py-2 focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary"
+                  className="block w-full rounded-lg border border-gray-200 px-4 py-3 text-sm focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500 shadow-sm"
                   rows={3}
                 />
               </div>
-              <div className="flex justify-end space-x-3">
+              <div className="flex justify-end gap-3">
                 <button
                   onClick={() => setShowEditModal(false)}
                   className="px-4 py-2 text-sm font-medium text-gray-700 hover:text-gray-900"
@@ -514,14 +660,16 @@ export default function TeamsPage() {
                 <button
                   onClick={handleEditTeam}
                   disabled={processing || !formData.name}
-                  className="inline-flex items-center px-4 py-2 border border-transparent rounded-md shadow-sm text-sm font-medium text-white bg-primary hover:bg-primary/90 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-primary disabled:opacity-50 disabled:cursor-not-allowed"
+                  className="px-4 py-2 text-sm font-medium text-white bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-700 hover:to-indigo-700 rounded-lg shadow-sm hover:shadow-md disabled:opacity-50 disabled:cursor-not-allowed transition-all duration-200"
                 >
                   {processing ? (
-                    <Loader2 className="h-4 w-4 animate-spin mr-2" />
+                    <Loader2 className="h-4 w-4 animate-spin" />
                   ) : (
-                    <Pencil className="h-4 w-4 mr-2" />
+                    <>
+                      <Pencil className="h-4 w-4 mr-2 inline-block" />
+                      Update Team
+                    </>
                   )}
-                  Update Team
                 </button>
               </div>
             </div>
@@ -531,18 +679,25 @@ export default function TeamsPage() {
 
       {/* Delete Modal */}
       {showDeleteModal && selectedTeam && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4">
-          <div className="bg-white rounded-lg max-w-md w-full p-6">
-            <div className="flex justify-between items-center mb-4">
-              <h2 className="text-xl font-semibold">Delete Team</h2>
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50">
+          <div className="bg-white rounded-xl max-w-md w-full p-6 shadow-2xl">
+            <div className="flex justify-between items-center mb-6">
+              <div className="flex items-center gap-3">
+                <div className="h-10 w-10 rounded-xl bg-gradient-to-br from-red-500/10 to-red-600/20 flex items-center justify-center">
+                  <Trash2 className="h-5 w-5 text-red-600" />
+                </div>
+                <h2 className="text-xl font-bold text-gray-900">Delete Team</h2>
+              </div>
               <button onClick={() => setShowDeleteModal(false)} className="text-gray-400 hover:text-gray-600">
                 <X className="h-5 w-5" />
               </button>
             </div>
-            <p className="text-gray-600 mb-4">
-              Are you sure you want to delete the team "{selectedTeam.name}"? This action cannot be undone.
-            </p>
-            <div className="flex justify-end space-x-3">
+            <div className="bg-red-50 p-4 rounded-lg mb-6">
+              <p className="text-sm text-red-600">
+                Are you sure you want to delete the team "{selectedTeam.name}"? This action cannot be undone.
+              </p>
+            </div>
+            <div className="flex justify-end gap-3">
               <button
                 onClick={() => setShowDeleteModal(false)}
                 className="px-4 py-2 text-sm font-medium text-gray-700 hover:text-gray-900"
@@ -552,14 +707,16 @@ export default function TeamsPage() {
               <button
                 onClick={handleDeleteTeam}
                 disabled={processing}
-                className="inline-flex items-center px-4 py-2 border border-transparent rounded-md shadow-sm text-sm font-medium text-white bg-red-600 hover:bg-red-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-red-500 disabled:opacity-50 disabled:cursor-not-allowed"
+                className="px-4 py-2 text-sm font-medium text-white bg-gradient-to-r from-red-600 to-red-500 hover:from-red-500 hover:to-red-600 rounded-lg shadow-sm hover:shadow-md disabled:opacity-50 disabled:cursor-not-allowed transition-all duration-200"
               >
                 {processing ? (
-                  <Loader2 className="h-4 w-4 animate-spin mr-2" />
+                  <Loader2 className="h-4 w-4 animate-spin" />
                 ) : (
-                  <Trash2 className="h-4 w-4 mr-2" />
+                  <>
+                    <Trash2 className="h-4 w-4 mr-2 inline-block" />
+                    Delete Team
+                  </>
                 )}
-                Delete Team
               </button>
             </div>
           </div>
@@ -569,10 +726,10 @@ export default function TeamsPage() {
       {/* Team Details Modal */}
       {showDetailsModal && selectedTeam && (
         <TeamDetailsModal
+          isOpen={showDetailsModal}
           team={selectedTeam}
           onClose={() => setShowDetailsModal(false)}
           onAgentRemoved={() => {
-            // Update the agent count in the teams list
             setTeams(teams.map(t => 
               t.team_id === selectedTeam.team_id 
                 ? { ...t, agent_count: t.agent_count - 1 }

@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from 'react';
 import { createClientComponentClient } from '@supabase/auth-helpers-nextjs';
-import { UserPlus, UserMinus } from 'lucide-react';
+import { UserPlus, UserMinus, ChevronLeft, ChevronRight } from 'lucide-react';
 import { formatDistanceToNow } from 'date-fns';
 import { Database } from '@/lib/types/database.types';
 import { Card } from '@/components/ui/card';
@@ -40,7 +40,13 @@ export default function TicketList({
   const [tickets, setTickets] = useState<Ticket[]>([]);
   const [loading, setLoading] = useState(true);
   const [assigningTicket, setAssigningTicket] = useState<Ticket | null>(null);
+  const [currentPage, setCurrentPage] = useState(1);
+  const itemsPerPage = 6;
   const supabase = createClientComponentClient<Database>();
+
+  useEffect(() => {
+    setCurrentPage(1);
+  }, [searchQuery, statusFilter, priorityFilter]);
 
   useEffect(() => {
     const timer = setTimeout(() => {
@@ -156,8 +162,8 @@ export default function TicketList({
   }
 
   const handleAssignmentComplete = () => {
-    fetchTickets();
     setAssigningTicket(null);
+    fetchTickets();
   };
 
   const getStatusColor = (status: string) => {
@@ -191,6 +197,11 @@ export default function TicketList({
     e.preventDefault();
   };
 
+  const totalPages = Math.ceil(tickets.length / itemsPerPage);
+  const startIndex = (currentPage - 1) * itemsPerPage;
+  const endIndex = startIndex + itemsPerPage;
+  const currentTickets = tickets.slice(startIndex, endIndex);
+
   if (loading) {
     return (
       <div className="flex justify-center p-8">
@@ -215,83 +226,122 @@ export default function TicketList({
   }
 
   return (
-    <div 
-      className="grid gap-6 md:grid-cols-2 lg:grid-cols-3 mt-6" 
-      onContextMenu={preventDefaultContextMenu}
-    >
-      {tickets.map((ticket) => (
-        <div key={ticket.ticket_id} onContextMenu={preventDefaultContextMenu}>
-          <ContextMenu.Root>
-            <ContextMenu.Trigger asChild>
-              <div className="h-full">
-                <Card className={cn(
-                  "overflow-hidden hover:shadow-md transition-shadow h-full cursor-context-menu",
-                  isClosed && "opacity-75"
-                )}>
-                  <div className="p-5">
-                    <div className="flex gap-2 mb-3">
-                      <Badge className={getStatusColor(ticket.status)}>{ticket.status}</Badge>
-                      <Badge className={getPriorityColor(ticket.priority)}>{ticket.priority}</Badge>
-                    </div>
+    <div className="space-y-6">
+      <div 
+        className="grid gap-6 md:grid-cols-2 lg:grid-cols-3" 
+        onContextMenu={preventDefaultContextMenu}
+      >
+        {currentTickets.map((ticket) => (
+          <div key={ticket.ticket_id} onContextMenu={preventDefaultContextMenu}>
+            <ContextMenu.Root>
+              <ContextMenu.Trigger asChild>
+                <div className="h-full">
+                  <Card className={cn(
+                    "overflow-hidden bg-white hover:shadow-lg transition-shadow h-full cursor-context-menu border-gray-200",
+                    isClosed ? "opacity-75" : "shadow-sm"
+                  )}>
+                    <div className="p-5">
+                      <div className="flex gap-2 mb-3">
+                        <Badge className={getStatusColor(ticket.status)}>{ticket.status}</Badge>
+                        <Badge className={getPriorityColor(ticket.priority)}>{ticket.priority}</Badge>
+                      </div>
 
-                    <h3 className="font-semibold text-lg text-gray-900 mb-2">{ticket.title}</h3>
+                      <h3 className="font-semibold text-lg text-gray-900 mb-2">{ticket.title}</h3>
 
-                    <p className="text-gray-600 text-sm mb-4">{ticket.description}</p>
+                      <p className="text-gray-600 text-sm mb-4">{ticket.description}</p>
 
-                    <div className="flex items-center gap-3">
-                      <Avatar className="border border-gray-200">
-                        <AvatarFallback className="bg-gray-100 text-gray-700">
-                          {ticket.customers.name.charAt(0).toUpperCase()}
-                        </AvatarFallback>
-                      </Avatar>
-                      <div>
-                        <p className="text-sm font-medium text-gray-900">{ticket.customers.name}</p>
-                        <p className="text-xs text-gray-500">{ticket.customers.email}</p>
+                      <div className="flex items-center gap-3">
+                        <Avatar className="border border-gray-200">
+                          <AvatarFallback className="bg-gray-100 text-gray-700">
+                            {ticket.customers.name.charAt(0).toUpperCase()}
+                          </AvatarFallback>
+                        </Avatar>
+                        <div>
+                          <p className="text-sm font-medium text-gray-900">{ticket.customers.name}</p>
+                          <p className="text-xs text-gray-500">{ticket.customers.email}</p>
+                        </div>
+                      </div>
+
+                      <div className="mt-4 pt-4 border-t border-gray-100">
+                        <div className="flex justify-between items-center text-xs text-gray-500">
+                          <span>Created {formatDate(ticket.created_at)} ago</span>
+                          {ticket.agents && (
+                            <span className="font-medium text-gray-700">
+                              Assigned to {ticket.agents.name}
+                            </span>
+                          )}
+                        </div>
                       </div>
                     </div>
+                  </Card>
+                </div>
+              </ContextMenu.Trigger>
 
-                    <div className="mt-4 pt-4 border-t border-gray-100">
-                      <div className="flex justify-between items-center text-xs text-gray-500">
-                        <span>Created {formatDate(ticket.created_at)} ago</span>
-                        {ticket.agents && (
-                          <span className="font-medium text-gray-700">
-                            Assigned to {ticket.agents.name}
-                          </span>
-                        )}
-                      </div>
-                    </div>
-                  </div>
-                </Card>
-              </div>
-            </ContextMenu.Trigger>
+              <ContextMenu.Portal>
+                <ContextMenu.Content 
+                  className="min-w-[200px] bg-white rounded-md shadow-md border border-gray-200 p-1 z-50"
+                >
+                  {!isClosed && (
+                    <ContextMenu.Item 
+                      className="flex items-center gap-2 px-2 py-1.5 text-sm text-gray-700 hover:bg-gray-100 rounded-sm cursor-pointer outline-none"
+                      onSelect={() => setAssigningTicket(ticket)}
+                    >
+                      {isAssigned ? (
+                        <>
+                          <UserMinus className="w-4 h-4" />
+                          <span>Reassign Ticket</span>
+                        </>
+                      ) : (
+                        <>
+                          <UserPlus className="w-4 h-4" />
+                          <span>Assign Ticket</span>
+                        </>
+                      )}
+                    </ContextMenu.Item>
+                  )}
+                </ContextMenu.Content>
+              </ContextMenu.Portal>
+            </ContextMenu.Root>
+          </div>
+        ))}
+      </div>
 
-            <ContextMenu.Portal>
-              <ContextMenu.Content 
-                className="min-w-[200px] bg-white rounded-md shadow-md border border-gray-200 p-1 z-50"
-              >
-                {!isClosed && (
-                  <ContextMenu.Item 
-                    className="flex items-center gap-2 px-2 py-1.5 text-sm text-gray-700 hover:bg-gray-100 rounded-sm cursor-pointer outline-none"
-                    onSelect={() => setAssigningTicket(ticket)}
-                  >
-                    {isAssigned ? (
-                      <>
-                        <UserMinus className="w-4 h-4" />
-                        <span>Reassign Ticket</span>
-                      </>
-                    ) : (
-                      <>
-                        <UserPlus className="w-4 h-4" />
-                        <span>Assign Ticket</span>
-                      </>
-                    )}
-                  </ContextMenu.Item>
+      {totalPages > 1 && (
+        <div className="flex items-center justify-center gap-2 mt-6">
+          <button
+            onClick={() => setCurrentPage(prev => Math.max(prev - 1, 1))}
+            disabled={currentPage === 1}
+            className="p-2 rounded-md hover:bg-gray-100 disabled:opacity-50 disabled:cursor-not-allowed"
+          >
+            <ChevronLeft className="w-5 h-5" />
+          </button>
+          
+          <div className="flex items-center gap-1">
+            {Array.from({ length: totalPages }, (_, i) => i + 1).map((page) => (
+              <button
+                key={page}
+                onClick={() => setCurrentPage(page)}
+                className={cn(
+                  "w-8 h-8 rounded-md text-sm font-medium",
+                  currentPage === page
+                    ? "bg-blue-600 text-white"
+                    : "text-gray-600 hover:bg-gray-100"
                 )}
-              </ContextMenu.Content>
-            </ContextMenu.Portal>
-          </ContextMenu.Root>
+              >
+                {page}
+              </button>
+            ))}
+          </div>
+
+          <button
+            onClick={() => setCurrentPage(prev => Math.min(prev + 1, totalPages))}
+            disabled={currentPage === totalPages}
+            className="p-2 rounded-md hover:bg-gray-100 disabled:opacity-50 disabled:cursor-not-allowed"
+          >
+            <ChevronRight className="w-5 h-5" />
+          </button>
         </div>
-      ))}
+      )}
 
       {assigningTicket && !isClosed && (
         isAssigned ? (

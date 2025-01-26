@@ -18,7 +18,15 @@ type TicketWithRelations = Database['public']['Tables']['tickets']['Row'] & {
 };
 
 type InteractionWithAgent = Database['public']['Tables']['interactions']['Row'] & {
-  agents: { name: string } | null;
+  agents: { 
+    name: string;
+    role: string;
+  } | null;
+  tickets: {
+    title: string;
+    ticket_id: string;
+    status: string;
+  } | null;
 };
 
 export default async function CustomerDashboard() {
@@ -88,7 +96,7 @@ export default async function CustomerDashboard() {
     `)
     .eq('customer_id', customerData.customer_id)
     .order('created_at', { ascending: false })
-    .limit(10) as { data: InteractionWithAgent[] | null };
+    .limit(6) as { data: InteractionWithAgent[] | null };
 
   return (
     <div className="container mx-auto px-6 py-8">
@@ -116,16 +124,19 @@ export default async function CustomerDashboard() {
       <DashboardStats tickets={ticketsData} />
 
       {/* Main Grid */}
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-8 mt-8">
-        {/* Active Tickets Section - Takes 2 columns */}
-        <div className="lg:col-span-2">
+      <div className="grid grid-cols-1 lg:grid-cols-4 gap-8 mt-8">
+        {/* Main Content Section - Takes 3 columns */}
+        <div className="lg:col-span-3 space-y-8">
+          {/* Active Tickets */}
           <ActiveTickets tickets={ticketsData} />
+          
+          {/* Knowledge Base */}
+          <KnowledgeBase customerId={customerData.customer_id} />
         </div>
 
         {/* Right Sidebar - Takes 1 column */}
-        <div className="space-y-8">
+        <div className="lg:col-span-1">
           <RecentActivity interactions={recentInteractions} />
-          <KnowledgeBase customerId={customerData.customer_id} />
         </div>
       </div>
     </div>

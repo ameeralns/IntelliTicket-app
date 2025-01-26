@@ -62,6 +62,18 @@ const categoryColors: { [key: string]: { bg: string; hover: string; border: stri
     hover: 'hover:bg-purple-100 dark:hover:bg-purple-900/30',
     border: 'border-purple-200 dark:border-purple-800',
     text: 'text-purple-900 dark:text-purple-100'
+  },
+  'General': {
+    bg: 'bg-teal-50 dark:bg-teal-900/20',
+    hover: 'hover:bg-teal-100 dark:hover:bg-teal-900/30',
+    border: 'border-teal-200 dark:border-teal-800',
+    text: 'text-teal-900 dark:text-teal-100'
+  },
+  'Tips & Tricks': {
+    bg: 'bg-rose-50 dark:bg-rose-900/20',
+    hover: 'hover:bg-rose-100 dark:hover:bg-rose-900/30',
+    border: 'border-rose-200 dark:border-rose-800',
+    text: 'text-rose-900 dark:text-rose-100'
   }
 };
 
@@ -272,19 +284,19 @@ export default function KnowledgeClient({
                   setEditingArticle(article);
                   setIsArticleDialogOpen(true);
                 }}
-                className="group relative cursor-pointer overflow-hidden border border-gray-200 dark:border-gray-800 bg-white dark:bg-gray-950 hover:border-gray-300 dark:hover:border-gray-700 transition-colors"
+                className={`group relative cursor-pointer overflow-hidden transition-all duration-200 ${colors.bg} ${colors.hover} border ${colors.border} hover:shadow-lg transform hover:-translate-y-1`}
               >
                 <CardHeader className="space-y-3">
                   <div className="flex items-center justify-between">
                     <div className="flex items-center gap-2">
                       {article.category ? (
-                        <Badge variant="outline" className="bg-gray-50 dark:bg-gray-900 text-gray-700 dark:text-gray-300 border-gray-200 dark:border-gray-800">
+                        <Badge variant="outline" className={`${colors.bg} ${colors.text} ${colors.border} font-medium`}>
                           <FolderPlus className="h-3.5 w-3.5 mr-1" />
                           {article.category}
                         </Badge>
                       ) : null}
                       {article.pdf_url && (
-                        <Badge variant="outline" className="bg-gray-50 dark:bg-gray-900 text-gray-700 dark:text-gray-300 border-gray-200 dark:border-gray-800">
+                        <Badge variant="outline" className={`${colors.bg} ${colors.text} ${colors.border}`}>
                           <FileText className="h-3.5 w-3.5 mr-1" />
                           PDF
                         </Badge>
@@ -295,10 +307,12 @@ export default function KnowledgeClient({
                         <Button
                           variant="ghost"
                           size="icon"
-                          className="h-8 w-8 text-gray-600 hover:text-gray-900 dark:text-gray-400 dark:hover:text-gray-100"
+                          className={`h-8 w-8 ${colors.text} opacity-0 group-hover:opacity-100 transition-opacity`}
                           onClick={(e) => {
                             e.stopPropagation();
-                            window.open(article.pdf_url, '_blank');
+                            if (article.pdf_url) {
+                              window.open(article.pdf_url, '_blank');
+                            }
                           }}
                         >
                           <Eye className="h-4 w-4" />
@@ -307,7 +321,7 @@ export default function KnowledgeClient({
                       <Button
                         variant="ghost"
                         size="icon"
-                        className="h-8 w-8 text-gray-600 hover:text-gray-900 dark:text-gray-400 dark:hover:text-gray-100"
+                        className={`h-8 w-8 ${colors.text} opacity-0 group-hover:opacity-100 transition-opacity`}
                         onClick={(e) => {
                           e.stopPropagation();
                           setEditingArticle(article);
@@ -319,7 +333,7 @@ export default function KnowledgeClient({
                       <Button
                         variant="ghost"
                         size="icon"
-                        className="h-8 w-8 text-gray-600 hover:text-gray-900 dark:text-gray-400 dark:hover:text-gray-100"
+                        className={`h-8 w-8 ${colors.text} opacity-0 group-hover:opacity-100 transition-opacity`}
                         onClick={(e) => {
                           e.stopPropagation();
                           setDeletingItem({ type: 'article', id: article.article_id });
@@ -331,7 +345,7 @@ export default function KnowledgeClient({
                     </div>
                   </div>
                   <div>
-                    <CardTitle className="text-xl font-semibold text-gray-900 dark:text-gray-100 line-clamp-2">
+                    <CardTitle className={`text-xl font-semibold ${colors.text} line-clamp-2`}>
                       {article.title}
                     </CardTitle>
                     <CardDescription className="mt-2.5 text-gray-600 dark:text-gray-400 line-clamp-3">
@@ -339,12 +353,12 @@ export default function KnowledgeClient({
                     </CardDescription>
                   </div>
                 </CardHeader>
-                <CardFooter className="flex items-center justify-between border-t border-gray-100 dark:border-gray-900 bg-gray-50/50 dark:bg-gray-900/50">
+                <CardFooter className={`flex items-center justify-between border-t ${colors.border} ${colors.bg}/50`}>
                   <div className="flex items-center gap-2 text-sm text-gray-600 dark:text-gray-400">
                     {article.pdf_url && (
                       <Button
                         variant="ghost"
-                        className="h-8 flex items-center gap-1.5 px-2 hover:bg-gray-100 dark:hover:bg-gray-800"
+                        className={`h-8 flex items-center gap-1.5 px-2 ${colors.hover}`}
                         onClick={(e) => {
                           e.stopPropagation();
                           if (article.pdf_url) {
@@ -358,7 +372,7 @@ export default function KnowledgeClient({
                       </Button>
                     )}
                   </div>
-                  <div className="flex items-center gap-2 text-sm text-gray-600 dark:text-gray-400">
+                  <div className={`flex items-center gap-2 text-sm ${colors.text}`}>
                     <Clock className="h-4 w-4" />
                     {format(new Date(article.updated_at || article.created_at || new Date()), 'MMM d, yyyy')}
                   </div>

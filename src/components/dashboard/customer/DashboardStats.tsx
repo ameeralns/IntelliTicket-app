@@ -16,10 +16,10 @@ export default function DashboardStats({ tickets = [] }: DashboardStatsProps) {
   const totalTickets = tickets?.length || 0;
   const openTickets = tickets?.filter(t => ['New', 'In Progress'].includes(t.status)).length || 0;
   const resolvedTickets = tickets?.filter(t => t.status === 'Resolved').length || 0;
-  const avgSatisfaction = tickets
-    ?.filter(t => t.satisfaction_score !== null)
-    .reduce((acc, t) => acc + (t.satisfaction_score || 0), 0) / 
-    (tickets?.filter(t => t.satisfaction_score !== null).length || 1);
+  const ticketsWithSatisfaction = tickets?.filter(t => t.satisfaction_score !== null) ?? [];
+  const avgSatisfaction = ticketsWithSatisfaction.length > 0
+    ? ticketsWithSatisfaction.reduce((acc, t) => acc + (t.satisfaction_score ?? 0), 0) / ticketsWithSatisfaction.length
+    : 0;
 
   const stats = [
     {

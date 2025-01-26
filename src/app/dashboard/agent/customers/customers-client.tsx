@@ -202,7 +202,7 @@ export default function CustomersClient() {
                   placeholder="Search customers..."
                   value={searchQuery}
                   onChange={(e) => setSearchQuery(e.target.value)}
-                  className="pl-9 w-full border-gray-200 dark:border-gray-800 focus:border-blue-500 dark:focus:border-blue-400"
+                  className="pl-9 w-full bg-white dark:bg-gray-900 border-gray-200 dark:border-gray-700 focus:border-blue-500 dark:focus:border-blue-400 text-gray-900 dark:text-white placeholder:text-gray-500 dark:placeholder:text-gray-400 text-base font-medium"
                 />
               </div>
             </div>
@@ -210,30 +210,30 @@ export default function CustomersClient() {
             <div className="flex items-center space-x-3">
               <Badge 
                 variant="outline" 
-                className="h-10 px-4 flex items-center gap-2 border-gray-200 dark:border-gray-800 bg-white dark:bg-gray-900"
+                className="h-10 px-4 flex items-center gap-2 border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-900"
               >
                 <SlidersHorizontal className="w-4 h-4 text-gray-500 dark:text-gray-400" />
                 <span className="text-sm font-medium text-gray-700 dark:text-gray-300">Filters</span>
               </Badge>
               
               <Select value={sortBy} onValueChange={setSortBy}>
-                <SelectTrigger className="border-gray-200 dark:border-gray-800 bg-white dark:bg-gray-900">
+                <SelectTrigger className="bg-white dark:bg-gray-900 border-gray-200 dark:border-gray-700 text-gray-900 dark:text-white font-medium">
                   <SelectValue placeholder="Sort by" />
                 </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="recent">Most Recent</SelectItem>
-                  <SelectItem value="name">Name</SelectItem>
-                  <SelectItem value="tickets">Ticket Count</SelectItem>
+                <SelectContent className="bg-white dark:bg-gray-900 border-gray-200 dark:border-gray-700">
+                  <SelectItem value="recent" className="text-gray-900 dark:text-white font-medium">Most Recent</SelectItem>
+                  <SelectItem value="name" className="text-gray-900 dark:text-white font-medium">Name</SelectItem>
+                  <SelectItem value="tickets" className="text-gray-900 dark:text-white font-medium">Ticket Count</SelectItem>
                 </SelectContent>
               </Select>
               
               <Select value={filterStatus} onValueChange={setFilterStatus}>
-                <SelectTrigger className="border-gray-200 dark:border-gray-800 bg-white dark:bg-gray-900">
+                <SelectTrigger className="bg-white dark:bg-gray-900 border-gray-200 dark:border-gray-700 text-gray-900 dark:text-white font-medium">
                   <SelectValue placeholder="Filter status" />
                 </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="all">All Customers</SelectItem>
-                  <SelectItem value="active">Active Tickets</SelectItem>
+                <SelectContent className="bg-white dark:bg-gray-900 border-gray-200 dark:border-gray-700">
+                  <SelectItem value="all" className="text-gray-900 dark:text-white font-medium">All Customers</SelectItem>
+                  <SelectItem value="active" className="text-gray-900 dark:text-white font-medium">Active Tickets</SelectItem>
                 </SelectContent>
               </Select>
             </div>

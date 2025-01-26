@@ -32,6 +32,7 @@ import {
 import { formatDistanceToNow } from 'date-fns';
 import Link from "next/link";
 import { createClientComponentClient } from '@supabase/auth-helpers-nextjs';
+import NotificationIndicator from '@/components/dashboard/agent/NotificationIndicator';
 
 interface RawTicketResponse {
   ticket_id: string;
@@ -249,7 +250,8 @@ export default function TicketsClient({ initialTickets, session }: TicketsClient
             href={"/dashboard/agent/tickets/" + ticket.ticket_id}
             className="block group"
           >
-            <Card className={"border-0 shadow-sm transition-all duration-200 overflow-hidden h-full " + getStatusCardStyles(ticket.status)}>
+            <Card className={"border-0 shadow-sm transition-all duration-200 overflow-hidden h-full relative " + getStatusCardStyles(ticket.status)}>
+              <NotificationIndicator ticketId={ticket.ticket_id} />
               <CardContent className="p-6">
                 <div className="flex items-start justify-between mb-4">
                   <div className="space-y-1.5">

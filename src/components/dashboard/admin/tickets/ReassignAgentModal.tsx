@@ -21,6 +21,8 @@ type Agent = {
   active_tickets: number;
 };
 
+type Ticket = Database['public']['Tables']['tickets']['Row'];
+
 export default function ReassignAgentModal({
   isOpen,
   onClose,
@@ -123,37 +125,38 @@ export default function ReassignAgentModal({
       if (sessionError) throw sessionError;
       if (!session?.user?.email) throw new Error('No authenticated user found');
 
-      // Get the current ticket data to verify organization
-      const { data: ticketData, error: ticketError } = await supabase
-        .from('tickets')
-        .select('*')
-        .eq('ticket_id', ticketId)
+      // Get the organization_id from the agents table for the current user
+      const { data: currentAgentData, error: currentAgentError } = await supabase
+        .from('agents')
+        .select('organization_id')
+        .eq('email', session.user.email)
         .single();
       
-      if (ticketError) throw ticketError;
-      if (!ticketData?.organization_id) throw new Error('No organization ID found for ticket');
+      if (currentAgentError) throw currentAgentError;
+      if (!currentAgentData?.organization_id) throw new Error('No organization ID found for current user');
 
-      // Verify the selected agent exists and belongs to the same organization
+      // Verify the selected agent exists and belongs to the same organization, and get their team_id
       const { data: agentData, error: agentError } = await supabase
         .from('agents')
-        .select('agent_id, organization_id')
+        .select('agent_id, organization_id, team_id')
         .eq('agent_id', selectedAgent)
-        .eq('organization_id', ticketData.organization_id)
+        .eq('organization_id', currentAgentData.organization_id)
         .single();
 
       if (agentError) throw new Error('Selected agent not found or not authorized');
       if (!agentData) throw new Error('Agent not found');
 
-      // Update the ticket with the new agent
+      // Update the ticket with the new agent and their team
       const { error: updateError } = await supabase
         .from('tickets')
         .update({
           agent_id: selectedAgent,
-          status: 'Reassigned',
+          team_id: agentData.team_id,
+          status: 'Assigned',
           updated_at: new Date().toISOString()
         })
         .eq('ticket_id', ticketId)
-        .eq('organization_id', ticketData.organization_id);
+        .eq('organization_id', currentAgentData.organization_id);
 
       if (updateError) {
         console.error('Update error:', updateError);

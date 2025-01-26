@@ -123,14 +123,23 @@ export default function AssignAgentModal({
       // Get the organization_id from the agents table
       const { data: agentData, error: agentError } = await supabase
         .from('agents')
-        .select('organization_id')
+        .select('organization_id, team_id')
         .eq('email', session.user.email)
         .single();
       if (agentError) throw agentError;
 
+      // Get the selected agent's team_id
+      const { data: selectedAgentData, error: selectedAgentError } = await supabase
+        .from('agents')
+        .select('team_id')
+        .eq('agent_id', selectedAgent)
+        .single();
+      if (selectedAgentError) throw selectedAgentError;
+
       const updates = {
         agent_id: selectedAgent,
-        status: currentAgentId ? 'Reassigned' : 'Assigned',
+        team_id: selectedAgentData.team_id,
+        status: 'Assigned',
         updated_at: new Date().toISOString(),
         organization_id: agentData.organization_id
       };

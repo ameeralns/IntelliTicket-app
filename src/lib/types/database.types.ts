@@ -389,6 +389,7 @@ export interface Database {
           customer_id: string
           agent_id: string | null
           team_id: string | null
+          organization_id: string
           title: string
           description: string
           status: string
@@ -402,6 +403,7 @@ export interface Database {
           customer_id: string
           agent_id?: string | null
           team_id?: string | null
+          organization_id: string
           title: string
           description: string
           status: string
@@ -415,6 +417,7 @@ export interface Database {
           customer_id?: string
           agent_id?: string | null
           team_id?: string | null
+          organization_id?: string
           title?: string
           description?: string
           status?: string
@@ -451,7 +454,7 @@ export interface Database {
             isOneToOne: false
             referencedRelation: "teams"
             referencedColumns: ["team_id"]
-          },
+          }
         ]
       }
       knowledge_articles: {
