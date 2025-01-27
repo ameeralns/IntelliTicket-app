@@ -3,6 +3,7 @@ import { redirect } from 'next/navigation';
 import KnowledgeBaseSearch from '@/components/dashboard/customer/knowledge/KnowledgeBaseSearch';
 import KnowledgeBaseCategories from '@/components/dashboard/customer/knowledge/KnowledgeBaseCategories';
 import KnowledgeBaseArticleList from '@/components/dashboard/customer/knowledge/KnowledgeBaseArticleList';
+import KnowledgeAssistantChat from '@/components/dashboard/customer/knowledge/KnowledgeAssistantChat';
 import { Database } from '@/lib/types/database.types';
 
 type Article = Database['public']['Tables']['knowledge_articles']['Row'];
@@ -38,15 +39,17 @@ export default async function KnowledgeBasePage() {
   // Calculate categories with article counts
   const categories = Array.from(
     articles.reduce((acc, article) => {
-      const count = acc.get(article.category) || 0;
-      acc.set(article.category, count + 1);
+      if (article.category) { // Only process if category is not null
+        const count = acc.get(article.category) || 0;
+        acc.set(article.category, count + 1);
+      }
       return acc;
     }, new Map<string, number>())
   ).map(([name, count]) => ({ name, count }));
 
   return (
     <div className="container mx-auto px-4 py-8">
-      <div className="max-w-4xl mx-auto">
+      <div className="max-w-7xl mx-auto">
         {/* Header */}
         <div className="mb-8">
           <h1 className="text-3xl font-bold text-white mb-2">Knowledge Base</h1>
@@ -61,15 +64,27 @@ export default async function KnowledgeBasePage() {
         </div>
 
         {/* Content */}
-        <div className="grid grid-cols-1 md:grid-cols-4 gap-8">
+        <div className="grid grid-cols-1 lg:grid-cols-12 gap-8">
           {/* Categories Sidebar */}
-          <div className="md:col-span-1">
+          <div className="lg:col-span-2">
             <KnowledgeBaseCategories categories={categories} />
           </div>
 
           {/* Articles List */}
-          <div className="md:col-span-3">
+          <div className="lg:col-span-6">
             <KnowledgeBaseArticleList articles={articles} />
+          </div>
+
+          {/* AI Assistant Chat */}
+          <div className="lg:col-span-4">
+            <div className="sticky top-4">
+              <div className="rounded-xl shadow-2xl bg-gradient-to-b from-blue-900/20 to-blue-950/20 backdrop-blur-sm border border-blue-500/20">
+                <div className="p-6">
+                  <h2 className="text-xl font-semibold mb-4 text-blue-400">AI Assistant</h2>
+                  <KnowledgeAssistantChat organizationId={customerData.organization_id} />
+                </div>
+              </div>
+            </div>
           </div>
         </div>
       </div>

@@ -30,6 +30,7 @@ import { format } from 'date-fns';
 import { toast } from 'sonner';
 import ArticleDialog from './components/ArticleDialog';
 import DeleteDialog from './components/DeleteDialog';
+import { EmbeddingService } from '@/lib/embeddings';
 
 // Category color mapping
 const categoryColors: { [key: string]: { bg: string; hover: string; border: string; text: string } } = {
@@ -132,7 +133,10 @@ export default function KnowledgeClient({
     is_published: boolean;
   }) => {
     try {
+      const embeddingService = new EmbeddingService();
+      
       if (editingArticle) {
+        // Update existing article
         const { data, error } = await supabase
           .from('knowledge_articles')
           .update({
@@ -145,9 +149,23 @@ export default function KnowledgeClient({
           .single();
 
         if (error) throw error;
+
+        // Update embeddings
+        await embeddingService.deleteDocumentEmbeddings(editingArticle.article_id);
+        await embeddingService.addDocument(
+          editingArticle.article_id,
+          `${articleData.title}\n\n${articleData.content}`,
+          {
+            title: articleData.title,
+            category: articleData.category,
+            is_published: articleData.is_published
+          }
+        );
+
         setArticles(prev => prev.map(a => a.article_id === data.article_id ? data : a));
         toast.success('Article updated successfully');
       } else {
+        // Create new article
         const { data, error } = await supabase
           .from('knowledge_articles')
           .insert({
@@ -162,6 +180,18 @@ export default function KnowledgeClient({
           .single();
 
         if (error) throw error;
+
+        // Generate embeddings for new article
+        await embeddingService.addDocument(
+          data.article_id,
+          `${articleData.title}\n\n${articleData.content}`,
+          {
+            title: articleData.title,
+            category: articleData.category,
+            is_published: articleData.is_published
+          }
+        );
+
         setArticles(prev => [...prev, data]);
         toast.success('Article created successfully');
       }

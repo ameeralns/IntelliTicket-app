@@ -1,5 +1,37 @@
 import { SupabaseClient } from '@supabase/supabase-js';
 
+interface Customer {
+  name: string;
+}
+
+interface Agent {
+  name: string;
+}
+
+interface Ticket {
+  ticket_id: string;
+  title: string;
+  organization_id: string;
+}
+
+interface TicketWithRelations {
+  ticket_id: string;
+  title: string;
+  status: string;
+  created_at: string;
+  customers: Customer;
+  agents?: Agent;
+}
+
+interface InteractionWithRelations {
+  interaction_id: string;
+  content: string;
+  created_at: string;
+  tickets: Ticket;
+  agents?: Agent;
+  customers?: Customer;
+}
+
 export interface DashboardStats {
   totalCustomers: string;
   openTickets: string;
@@ -49,11 +81,16 @@ export async function fetchRecentActivities(
       title,
       status,
       created_at,
-      customers (name),
-      agents (name)
+      customers!inner (
+        name
+      ),
+      agents!left (
+        name
+      )
     `)
+    .eq('organization_id', organizationId)
     .order('created_at', { ascending: false })
-    .limit(5);
+    .limit(5) as { data: TicketWithRelations[] | null };
 
   if (tickets) {
     tickets.forEach(ticket => {
@@ -61,7 +98,7 @@ export async function fetchRecentActivities(
         id: `ticket-${ticket.ticket_id}`,
         type: 'ticket_created',
         title: 'New Ticket Created',
-        description: `${ticket.customers?.name} created ticket: ${ticket.title}`,
+        description: `${ticket.customers.name} created ticket: ${ticket.title}`,
         timestamp: ticket.created_at,
         metadata: {
           ticketId: ticket.ticket_id
@@ -77,12 +114,21 @@ export async function fetchRecentActivities(
       interaction_id,
       content,
       created_at,
-      tickets (title),
-      agents (name),
-      customers (name)
+      tickets!inner (
+        ticket_id,
+        title,
+        organization_id
+      ),
+      agents!left (
+        name
+      ),
+      customers!left (
+        name
+      )
     `)
+    .eq('tickets.organization_id', organizationId)
     .order('created_at', { ascending: false })
-    .limit(5);
+    .limit(5) as { data: InteractionWithRelations[] | null };
 
   if (interactions) {
     interactions.forEach(interaction => {
@@ -90,10 +136,10 @@ export async function fetchRecentActivities(
         id: `interaction-${interaction.interaction_id}`,
         type: 'interaction_added',
         title: 'New Interaction',
-        description: `${interaction.agents?.name || interaction.customers?.name} added a response to ticket: ${interaction.tickets?.title}`,
+        description: `${interaction.agents?.name || interaction.customers?.name || 'System'} added a response to ticket: ${interaction.tickets.title}`,
         timestamp: interaction.created_at,
         metadata: {
-          ticketId: interaction.tickets?.ticket_id
+          ticketId: interaction.tickets.ticket_id
         }
       });
     });
@@ -119,6 +165,7 @@ export async function fetchDashboardStats(
   const { count: openTicketCount } = await supabase
     .from('tickets')
     .select('*', { count: 'exact', head: true })
+    .eq('organization_id', organizationId)
     .neq('status', 'Closed');
 
   // Get total interactions this month
@@ -128,17 +175,24 @@ export async function fetchDashboardStats(
 
   const { count: interactionCount } = await supabase
     .from('interactions')
-    .select('*', { count: 'exact', head: true })
+    .select(`
+      *,
+      tickets!inner (
+        organization_id
+      )
+    `, { count: 'exact', head: true })
+    .eq('tickets.organization_id', organizationId)
     .gte('created_at', startOfMonth.toISOString());
 
   // Get average response time (in hours)
   const { data: avgResponseData } = await supabase
-    .rpc('calculate_avg_response_time');
+    .rpc('calculate_avg_response_time', { org_id: organizationId });
 
   // Get customer satisfaction
   const { data: satisfactionData } = await supabase
     .from('tickets')
     .select('satisfaction_score')
+    .eq('organization_id', organizationId)
     .not('satisfaction_score', 'is', null);
 
   const avgSatisfaction = satisfactionData ? 
@@ -155,28 +209,45 @@ export async function fetchDashboardStats(
   const prevMonth = new Date(startOfMonth);
   prevMonth.setMonth(prevMonth.getMonth() - 1);
 
+  // Get previous month's interactions
+  const { count: prevMonthInteractions } = await supabase
+    .from('interactions')
+    .select(`
+      *,
+      tickets!inner (
+        organization_id
+      )
+    `, { count: 'exact', head: true })
+    .eq('tickets.organization_id', organizationId)
+    .gte('created_at', prevMonth.toISOString())
+    .lt('created_at', startOfMonth.toISOString());
+
+  // Get previous month's customers
   const { count: prevMonthCustomers } = await supabase
     .from('customers')
     .select('*', { count: 'exact', head: true })
     .eq('organization_id', organizationId)
     .lt('created_at', startOfMonth.toISOString());
 
-  // Format numbers
+  // Format numbers and calculate trends
   const safeCustomerCount = customerCount || 0;
   const customerTrend = ((safeCustomerCount - (prevMonthCustomers || 0)) / (prevMonthCustomers || 1)) * 100;
+
+  const safeInteractionCount = interactionCount || 0;
+  const interactionTrend = ((safeInteractionCount - (prevMonthInteractions || 0)) / (prevMonthInteractions || 1)) * 100;
 
   return {
     totalCustomers: safeCustomerCount.toLocaleString(),
     openTickets: openTicketCount?.toLocaleString() || '0',
     avgResponseTime: `${(avgResponseData?.[0]?.avg_response_time || 0).toFixed(1)}h`,
-    totalInteractions: interactionCount?.toLocaleString() || '0',
+    totalInteractions: safeInteractionCount.toLocaleString(),
     satisfaction: `${Math.round(avgSatisfaction)}%`,
     activeAgents: activeAgentCount?.toLocaleString() || '0',
     ticketTrends: {
       customers: Math.round(customerTrend),
       tickets: -5, // TODO: Implement actual calculation
       responseTime: 15, // TODO: Implement actual calculation
-      interactions: 8, // TODO: Implement actual calculation
+      interactions: Math.round(interactionTrend),
       satisfaction: 3, // TODO: Implement actual calculation
     }
   };
@@ -236,15 +307,18 @@ export async function fetchSatisfactionTrendData(
     const { data } = await supabase
       .from('tickets')
       .select('satisfaction_score')
+      .eq('organization_id', organizationId)
       .gte('created_at', dayStart.toISOString())
       .lt('created_at', dayEnd.toISOString())
       .not('satisfaction_score', 'is', null);
 
-    const avgScore = data?.reduce((acc, curr) => acc + curr.satisfaction_score, 0) / (data?.length || 1);
+    const avgScore = data && data.length > 0
+      ? data.reduce((acc, curr) => acc + (curr.satisfaction_score || 0), 0) / data.length
+      : 0;
 
     result.push({
       name: days[d.getDay()],
-      value: Math.round(avgScore || 0)
+      value: Math.round(avgScore)
     });
   }
 

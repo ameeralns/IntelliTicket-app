@@ -27,6 +27,9 @@ export default function LandingPage() {
               <Link href="#pricing" className="text-slate-300 hover:text-white transition-colors">
                 Pricing
               </Link>
+              <Link href="/addorganization" className="text-slate-300 hover:text-white transition-colors">
+                Add Organization
+              </Link>
               <Link href="/login">
                 <Button variant="ghost" className="text-slate-300 hover:text-white">
                   Sign in

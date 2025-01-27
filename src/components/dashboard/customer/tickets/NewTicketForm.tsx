@@ -2,7 +2,7 @@
 
 import { useState } from 'react';
 import { createClientComponentClient } from '@supabase/auth-helpers-nextjs';
-import { Tag, Loader2 } from 'lucide-react';
+import { Tag } from 'lucide-react';
 import { toast } from 'react-hot-toast';
 import { useRouter } from 'next/navigation';
 
@@ -66,7 +66,6 @@ export default function NewTicketForm({ customerId, availableTags }: NewTicketFo
 
         if (tagsError) {
           console.error('Error adding tags:', tagsError);
-          // Don't throw here - we want to proceed even if tag addition fails
           toast.error('Ticket created but failed to add some tags');
         }
       }
@@ -83,109 +82,104 @@ export default function NewTicketForm({ customerId, availableTags }: NewTicketFo
   };
 
   return (
-    <form onSubmit={handleSubmit} className="bg-gray-800 rounded-lg p-6 space-y-6">
-      {error && (
-        <div className="bg-red-500/10 border border-red-500 text-red-500 px-4 py-2 rounded-lg">
-          {error}
-        </div>
-      )}
-
-      {/* Title */}
-      <div>
-        <label htmlFor="title" className="block text-sm font-medium text-gray-300 mb-2">
-          Title
-        </label>
-        <input
-          type="text"
-          id="title"
-          name="title"
-          required
-          maxLength={255}
-          className="w-full bg-gray-700 text-white rounded-lg px-4 py-2 focus:ring-2 focus:ring-blue-500"
-          placeholder="Brief description of the issue"
-        />
-      </div>
-
-      {/* Description */}
-      <div>
-        <label htmlFor="description" className="block text-sm font-medium text-gray-300 mb-2">
-          Description
-        </label>
-        <textarea
-          id="description"
-          name="description"
-          required
-          rows={6}
-          className="w-full bg-gray-700 text-white rounded-lg px-4 py-2 focus:ring-2 focus:ring-blue-500"
-          placeholder="Detailed description of your issue..."
-        />
-      </div>
-
-      {/* Priority */}
-      <div>
-        <label htmlFor="priority" className="block text-sm font-medium text-gray-300 mb-2">
-          Priority
-        </label>
-        <select
-          id="priority"
-          name="priority"
-          required
-          defaultValue=""
-          className="w-full bg-gray-700 text-white rounded-lg px-4 py-2 focus:ring-2 focus:ring-blue-500"
-        >
-          <option value="" disabled>Select priority level</option>
-          <option value="Low">Low</option>
-          <option value="Medium">Medium</option>
-          <option value="High">High</option>
-          <option value="Urgent">Urgent</option>
-        </select>
-      </div>
-
-      {/* Tags */}
-      <div>
-        <label className="block text-sm font-medium text-gray-300 mb-2">
-          Tags (Optional)
-        </label>
-        {availableTags.length > 0 ? (
-          <div className="flex flex-wrap gap-2">
-            {availableTags.map((tag) => (
-              <button
-                key={tag.tag_id}
-                type="button"
-                onClick={() => handleTagToggle(tag.tag_id)}
-                className={`inline-flex items-center px-3 py-1.5 rounded-full text-sm font-medium transition-colors ${
-                  selectedTags.includes(tag.tag_id)
-                    ? 'bg-blue-500 text-white hover:bg-blue-600'
-                    : 'bg-gray-700 text-gray-300 hover:bg-gray-600'
-                }`}
-              >
-                <Tag className="w-4 h-4 mr-1.5" />
-                {tag.name}
-              </button>
-            ))}
+    <div className="space-y-6">
+      <form onSubmit={handleSubmit} className="bg-gray-800 rounded-lg p-6 space-y-6">
+        {error && (
+          <div className="bg-red-500/10 border border-red-500 text-red-500 px-4 py-2 rounded-lg">
+            {error}
           </div>
-        ) : (
-          <p className="text-sm text-gray-400">No tags available</p>
         )}
-      </div>
 
-      {/* Submit Button */}
-      <div className="flex justify-end">
-        <button
-          type="submit"
-          disabled={isSubmitting}
-          className="inline-flex items-center px-6 py-2.5 rounded-lg font-medium text-white bg-blue-500 hover:bg-blue-600 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 focus:ring-offset-gray-800 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
-        >
-          {isSubmitting ? (
-            <>
-              <Loader2 className="w-4 h-4 mr-2 animate-spin" />
-              Creating...
-            </>
+        {/* Title */}
+        <div>
+          <label htmlFor="title" className="block text-sm font-medium text-gray-300 mb-2">
+            Title
+          </label>
+          <input
+            type="text"
+            id="title"
+            name="title"
+            required
+            maxLength={255}
+            className="w-full bg-gray-700 text-white rounded-lg px-4 py-2 focus:ring-2 focus:ring-blue-500"
+            placeholder="Brief description of the issue"
+          />
+        </div>
+
+        {/* Description */}
+        <div>
+          <label htmlFor="description" className="block text-sm font-medium text-gray-300 mb-2">
+            Description
+          </label>
+          <textarea
+            id="description"
+            name="description"
+            required
+            rows={6}
+            className="w-full bg-gray-700 text-white rounded-lg px-4 py-2 focus:ring-2 focus:ring-blue-500"
+            placeholder="Detailed description of your issue..."
+          />
+        </div>
+
+        {/* Priority */}
+        <div>
+          <label htmlFor="priority" className="block text-sm font-medium text-gray-300 mb-2">
+            Priority
+          </label>
+          <select
+            id="priority"
+            name="priority"
+            required
+            defaultValue=""
+            className="w-full bg-gray-700 text-white rounded-lg px-4 py-2 focus:ring-2 focus:ring-blue-500"
+          >
+            <option value="" disabled>Select priority level</option>
+            <option value="Low">Low</option>
+            <option value="Medium">Medium</option>
+            <option value="High">High</option>
+            <option value="Urgent">Urgent</option>
+          </select>
+        </div>
+
+        {/* Tags */}
+        <div>
+          <label className="block text-sm font-medium text-gray-300 mb-2">
+            Tags (Optional)
+          </label>
+          {availableTags.length > 0 ? (
+            <div className="flex flex-wrap gap-2">
+              {availableTags.map((tag) => (
+                <button
+                  key={tag.tag_id}
+                  type="button"
+                  onClick={() => handleTagToggle(tag.tag_id)}
+                  className={`inline-flex items-center px-3 py-1.5 rounded-full text-sm font-medium transition-colors ${
+                    selectedTags.includes(tag.tag_id)
+                      ? 'bg-blue-500 text-white hover:bg-blue-600'
+                      : 'bg-gray-700 text-gray-300 hover:bg-gray-600'
+                  }`}
+                >
+                  <Tag className="w-4 h-4 mr-1.5" />
+                  {tag.name}
+                </button>
+              ))}
+            </div>
           ) : (
-            'Create Ticket'
+            <p className="text-gray-400 text-sm">No tags available</p>
           )}
-        </button>
-      </div>
-    </form>
+        </div>
+
+        {/* Submit Button */}
+        <div>
+          <button
+            type="submit"
+            disabled={isSubmitting}
+            className="w-full bg-blue-500 hover:bg-blue-600 text-white font-medium py-2 px-4 rounded-lg disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+          >
+            {isSubmitting ? 'Creating Ticket...' : 'Create Ticket'}
+          </button>
+        </div>
+      </form>
+    </div>
   );
 } 

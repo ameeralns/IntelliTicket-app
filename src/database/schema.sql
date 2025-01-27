@@ -686,3 +686,96 @@ CREATE TRIGGER delete_knowledge_article_pdf
     BEFORE DELETE ON knowledge_articles
     FOR EACH ROW
     EXECUTE FUNCTION delete_pdf_file();
+
+-- Enable vector extension (already enabled by default in Supabase)
+-- CREATE EXTENSION IF NOT EXISTS vector;
+
+-- Table for storing document embeddings
+CREATE TABLE IF NOT EXISTS knowledge_embeddings (
+    embedding_id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    article_id UUID REFERENCES knowledge_articles(article_id) ON DELETE CASCADE,
+    content_chunk TEXT NOT NULL,
+    embedding vector(1536) NOT NULL,
+    chunk_index INTEGER NOT NULL,
+    metadata JSONB DEFAULT '{}',
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
+);
+
+-- Create a function to search for similar content
+CREATE OR REPLACE FUNCTION match_knowledge_embeddings (
+  query_embedding vector(1536),
+  match_threshold float DEFAULT 0.7,
+  match_count int DEFAULT 5
+)
+RETURNS TABLE (
+  content_chunk TEXT,
+  article_id UUID,
+  similarity float,
+  metadata JSONB
+)
+LANGUAGE plpgsql
+AS $$
+BEGIN
+  RETURN QUERY
+  SELECT
+    ke.content_chunk,
+    ke.article_id,
+    1 - (ke.embedding <=> query_embedding) as similarity,
+    ke.metadata
+  FROM knowledge_embeddings ke
+  WHERE 1 - (ke.embedding <=> query_embedding) > match_threshold
+  ORDER BY ke.embedding <=> query_embedding
+  LIMIT match_count;
+END;
+$$;
+
+-- Create trigger function for embedding updates
+CREATE OR REPLACE FUNCTION handle_knowledge_article_changes()
+RETURNS TRIGGER AS $$
+BEGIN
+    -- If content or title changed, or article is published/unpublished
+    IF (TG_OP = 'INSERT') OR
+       (TG_OP = 'UPDATE' AND (
+           NEW.content <> OLD.content OR
+           NEW.title <> OLD.title OR
+           NEW.is_published <> OLD.is_published
+       ))
+    THEN
+        -- Delete existing embeddings if any
+        DELETE FROM knowledge_embeddings
+        WHERE article_id = NEW.article_id;
+        
+        -- Only create embeddings for published articles
+        IF NEW.is_published THEN
+            -- Signal that embeddings need to be updated
+            INSERT INTO embedding_jobs (article_id, status)
+            VALUES (NEW.article_id, 'pending')
+            ON CONFLICT (article_id) 
+            DO UPDATE SET status = 'pending', updated_at = CURRENT_TIMESTAMP;
+        END IF;
+    END IF;
+    
+    RETURN NEW;
+END;
+$$ LANGUAGE plpgsql;
+
+-- Create embedding jobs table to track pending updates
+CREATE TABLE IF NOT EXISTS embedding_jobs (
+    job_id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    article_id UUID NOT NULL REFERENCES knowledge_articles(article_id) ON DELETE CASCADE,
+    status VARCHAR(20) NOT NULL CHECK (status IN ('pending', 'processing', 'completed', 'failed')),
+    error_message TEXT,
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+    UNIQUE(article_id)
+);
+
+-- Create index for job processing
+CREATE INDEX IF NOT EXISTS idx_embedding_jobs_status ON embedding_jobs(status);
+
+-- Add trigger for article changes
+DROP TRIGGER IF EXISTS trigger_knowledge_article_changes ON knowledge_articles;
+CREATE TRIGGER trigger_knowledge_article_changes
+    AFTER INSERT OR UPDATE ON knowledge_articles
+    FOR EACH ROW
+    EXECUTE FUNCTION handle_knowledge_article_changes();
