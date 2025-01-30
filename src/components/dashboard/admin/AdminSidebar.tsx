@@ -15,6 +15,8 @@ import {
   ChevronRight
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
+import { RiRobot2Line } from 'react-icons/ri';
+import { AdminIntelligenceModal } from './ai/AdminIntelligenceModal';
 
 interface AdminProfile {
   name: string;
@@ -49,6 +51,7 @@ const AdminSidebar: FC = () => {
   const [profile, setProfile] = useState<AdminProfile | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [isAIModalOpen, setIsAIModalOpen] = useState(false);
 
   useEffect(() => {
     fetchProfile();
@@ -156,55 +159,84 @@ const AdminSidebar: FC = () => {
   ];
 
   return (
-    <div className="flex h-full flex-col bg-white border-r">
-      {/* Organization name */}
-      <div className="px-4 py-4 border-b">
-        <Link 
-          href="/dashboard/admin/profile"
-          className="block hover:opacity-80 transition-opacity"
-        >
-          <h2 className="text-lg font-semibold text-gray-900">
-            {profile?.organization_name || 'Loading...'}
-          </h2>
-          <p className="text-sm text-gray-500">Admin Dashboard</p>
-        </Link>
+    <>
+      <div className="flex h-full flex-col bg-white border-r">
+        {/* Organization name */}
+        <div className="px-4 py-4 border-b">
+          <Link 
+            href="/dashboard/admin/profile"
+            className="block hover:opacity-80 transition-opacity"
+          >
+            <h2 className="text-lg font-semibold text-gray-900">
+              {profile?.organization_name || 'Loading...'}
+            </h2>
+            <p className="text-sm text-gray-500">Admin Dashboard</p>
+          </Link>
+        </div>
+
+        {/* Navigation */}
+        <nav className="flex-1 space-y-1 px-2 py-4">
+          {navigation.map((item) => {
+            const Icon = iconMap[item.icon];
+            return (
+              <Link
+                key={item.name}
+                href={item.href}
+                className={cn(
+                  item.current
+                    ? 'bg-gray-100 text-gray-900'
+                    : 'text-gray-600 hover:bg-gray-50 hover:text-gray-900',
+                  'group flex items-center px-2 py-2 text-sm font-medium rounded-md'
+                )}
+              >
+                {Icon && (
+                  <Icon
+                    className={cn(
+                      item.current
+                        ? 'text-gray-500'
+                        : 'text-gray-400 group-hover:text-gray-500',
+                      'mr-3 h-5 w-5 flex-shrink-0'
+                    )}
+                    aria-hidden="true"
+                  />
+                )}
+                {item.name}
+                {item.current && (
+                  <ChevronRight className="ml-auto h-4 w-4 text-gray-400" />
+                )}
+              </Link>
+            );
+          })}
+
+          {/* AI Assistant Button - Moved inside nav */}
+          <button
+            onClick={() => setIsAIModalOpen(true)}
+            className={cn(
+              'w-full text-gray-600 hover:bg-gray-50 hover:text-gray-900',
+              'group flex items-center px-2 py-2 text-sm font-medium rounded-md'
+            )}
+          >
+            <RiRobot2Line
+              className="text-gray-400 group-hover:text-gray-500 mr-3 h-5 w-5 flex-shrink-0"
+              aria-hidden="true"
+            />
+            AI Assistant
+          </button>
+        </nav>
+
+        {/* Remove the old button container */}
+        <div className="space-y-2">
+          <div className="pt-4 mt-4 border-t border-border">
+          </div>
+        </div>
       </div>
 
-      {/* Navigation */}
-      <nav className="flex-1 space-y-1 px-2 py-4">
-        {navigation.map((item) => {
-          const Icon = iconMap[item.icon];
-          return (
-            <Link
-              key={item.name}
-              href={item.href}
-              className={cn(
-                item.current
-                  ? 'bg-gray-100 text-gray-900'
-                  : 'text-gray-600 hover:bg-gray-50 hover:text-gray-900',
-                'group flex items-center px-2 py-2 text-sm font-medium rounded-md'
-              )}
-            >
-              {Icon && (
-                <Icon
-                  className={cn(
-                    item.current
-                      ? 'text-gray-500'
-                      : 'text-gray-400 group-hover:text-gray-500',
-                    'mr-3 h-5 w-5 flex-shrink-0'
-                  )}
-                  aria-hidden="true"
-                />
-              )}
-              {item.name}
-              {item.current && (
-                <ChevronRight className="ml-auto h-4 w-4 text-gray-400" />
-              )}
-            </Link>
-          );
-        })}
-      </nav>
-    </div>
+      {/* AI Intelligence Modal */}
+      <AdminIntelligenceModal 
+        isOpen={isAIModalOpen} 
+        onClose={() => setIsAIModalOpen(false)} 
+      />
+    </>
   );
 };
 
