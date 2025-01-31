@@ -13,13 +13,10 @@ import ReassignAgentModal from './ReassignAgentModal';
 import * as ContextMenu from '@radix-ui/react-context-menu';
 import { cn } from '@/lib/utils';
 
-type DBTicket = Database['public']['Tables']['tickets']['Row'];
-type DBCustomer = Database['public']['Tables']['customers']['Row'];
-type DBAgent = Database['public']['Tables']['agents']['Row'];
-
-type Ticket = DBTicket & {
-  customers: Pick<DBCustomer, 'name' | 'email'>;
-  agents: Pick<DBAgent, 'name' | 'email'> | null;
+type Tables = Database['public']['Tables'];
+type Ticket = Tables['tickets']['Row'] & {
+  customers: Pick<Tables['customers']['Row'], 'name' | 'email'>;
+  agent: Pick<Tables['agents']['Row'], 'name' | 'email'> | null;
 };
 
 interface TicketListProps {
@@ -54,7 +51,7 @@ export default function TicketList({
     }, 300);
 
     return () => clearTimeout(timer);
-  }, [searchQuery, statusFilter, priorityFilter]);
+  }, [searchQuery, statusFilter, priorityFilter, isAssigned, isClosed]);
 
   useEffect(() => {
     const channel = supabase
@@ -84,12 +81,19 @@ export default function TicketList({
       let query = supabase
         .from('tickets')
         .select(`
-          *,
-          customers (
+          ticket_id,
+          title,
+          description,
+          status,
+          priority,
+          created_at,
+          customer_id,
+          agent_id,
+          customers!tickets_customer_id_fkey (
             name,
             email
           ),
-          agents (
+          agent:agents!tickets_agent_id_fkey (
             name,
             email
           )
@@ -134,9 +138,9 @@ export default function TicketList({
 
       const transformedTickets = (ticketsData || []).map(ticket => ({
         ...ticket,
-        customers: ticket.customers as Ticket['customers'],
-        agents: ticket.agents as Ticket['agents']
-      }));
+        customers: ticket.customers || { name: '', email: '' },
+        agent: ticket.agent || null
+      })) as Ticket[];
 
       if (searchQuery && searchQuery.trim()) {
         const search = searchQuery.trim().toLowerCase();
@@ -144,7 +148,7 @@ export default function TicketList({
         const filteredTickets = transformedTickets.filter(ticket => {
           const customerMatch = ticket.customers?.name.toLowerCase().includes(search) ||
                               ticket.customers?.email.toLowerCase().includes(search);
-          const agentMatch = (isAssigned || isClosed) && ticket.agents?.name.toLowerCase().includes(search);
+          const agentMatch = (isAssigned || isClosed) && ticket.agent?.name.toLowerCase().includes(search);
           
           return customerMatch || agentMatch;
         });
@@ -265,9 +269,9 @@ export default function TicketList({
                       <div className="mt-4 pt-4 border-t border-gray-100">
                         <div className="flex justify-between items-center text-xs text-gray-500">
                           <span>Created {formatDate(ticket.created_at)} ago</span>
-                          {ticket.agents && (
+                          {ticket.agent && (
                             <span className="font-medium text-gray-700">
-                              Assigned to {ticket.agents.name}
+                              Assigned to {ticket.agent.name}
                             </span>
                           )}
                         </div>
@@ -350,7 +354,7 @@ export default function TicketList({
             onClose={() => setAssigningTicket(null)}
             ticketId={assigningTicket.ticket_id}
             currentAgentId={assigningTicket.agent_id!}
-            currentAgentName={assigningTicket.agents?.name || 'Unknown'}
+            currentAgentName={assigningTicket.agent?.name || 'Unknown'}
             onReassigned={handleAssignmentComplete}
           />
         ) : (

@@ -4,10 +4,12 @@ import { Langfuse } from 'langfuse';
 import { BaseTracer } from '@langchain/core/tracers/base';
 import { LangChainTracer } from 'langchain/callbacks';
 import { Client as LangSmithClient } from 'langsmith';
+import { AccuracyMetricsService } from './AccuracyMetricsService';
+import { UUID } from 'crypto';
 
 interface ToolProps {
   supabase: SupabaseClient;
-  langfuse?: Langfuse | null;
+  langfuse?: Langfuse;
   langsmith?: LangSmithClient;
 }
 
@@ -81,6 +83,7 @@ interface TracingMetadata {
       duration_ms?: number;
       query_complexity?: number;
       total_processed?: number;
+      retry_count?: number;
     };
     data?: {
       ticket_count?: number;
@@ -105,18 +108,25 @@ interface TraceFilters {
   samplingRate: number;
 }
 
+// Add error type
+interface AIToolError extends Error {
+  name: string;
+  message: string;
+  stack?: string;
+}
+
 class EnhancedTracer extends BaseTracer {
   name = 'enhanced_tracer';
   private traceQueue: TracingMetadata[] = [];
   private readonly QUEUE_SIZE_LIMIT = 10;
   private readonly filters: TraceFilters = {
     excludeFields: ['sensitive_data', 'internal_ids'],
-    minDuration: 100, // ms
+    minDuration: 100,
     maxDepth: 5,
-    samplingRate: 0.1 // 10% sampling rate
+    samplingRate: 0.1
   };
   
-  constructor(private langfuse: Langfuse | null) {
+  constructor(private langfuse: Langfuse | undefined) {
     super();
   }
 
@@ -207,73 +217,201 @@ export class OrganizationStructureTool extends Tool {
   private supabase: SupabaseClient;
   private tracer: EnhancedTracer;
   private currentContext?: TracingContext;
+  private metricsService: AccuracyMetricsService;
   
   constructor(props: ToolProps) {
     super();
     this.supabase = props.supabase;
-    this.tracer = new EnhancedTracer(props.langfuse || null);
+    this.tracer = new EnhancedTracer(props.langfuse);
+    this.metricsService = new AccuracyMetricsService(
+      props.supabase, 
+      props.langsmith, 
+      props.langfuse
+    );
+  }
+
+  private checkDataQuality(result: any): number {
+    if (!result?.data) return 0;
+    
+    let score = 0;
+    const data = result.data;
+    
+    // Check for presence of key data structures
+    if (data.tickets?.summary) score += 0.3;
+    if (data.teams) score += 0.3;
+    if (data.customers) score += 0.3;
+    
+    // Check for data completeness
+    const hasCompleteData = Object.values(data).every(val => val !== null && val !== undefined);
+    if (hasCompleteData) score += 0.1;
+    
+    return Math.min(1, score);
+  }
+
+  private checkResponseQuality(result: any): number {
+    if (!result) return 0;
+    
+    let score = 0;
+    
+    // Check response structure
+    if (result.success === true) score += 0.3;
+    if (typeof result.data === 'object') score += 0.2;
+    
+    // Check for meaningful content
+    const hasContent = result.data && Object.keys(result.data).length > 0;
+    if (hasContent) score += 0.3;
+    
+    // Check for error handling
+    const hasErrorHandling = result.error === undefined || (result.error && result.error.message);
+    if (hasErrorHandling) score += 0.2;
+    
+    return score;
+  }
+
+  private calculateConfidence(input: string, result: any): number {
+    if (!result) return 0;
+    
+    const dataQuality = this.checkDataQuality(result);
+    const responseQuality = this.checkResponseQuality(result);
+    
+    // Weight the factors
+    const weights = {
+      dataQuality: 0.6,
+      responseQuality: 0.4
+    };
+    
+    return (
+      dataQuality * weights.dataQuality +
+      responseQuality * weights.responseQuality
+    );
   }
 
   protected async _call(input: string): Promise<string> {
     this.currentContext = this.tracer.createContext(this.currentContext);
     const startTime = this.currentContext.startTime;
-
-    const traceMetadata: TracingMetadata = {
-      toolName: this.name,
-      actionType: 'query',
-      startTime,
-      organizationId: '', // Will be set from input
-      total: 0, // Will be updated with actual total
-      context: this.currentContext
-    };
+    let success = false;
+    let errorType = undefined;
+    let errorMessage = undefined;
+    let result;
+    let parsedInput = { organizationId: '', filters: {}, queryType: '' };
 
     try {
-      const parsedInput = this.parseAndValidateInput(input);
-      traceMetadata.organizationId = parsedInput.organizationId;
-
-      const { orgStructure, tickets } = await this.fetchData(parsedInput);
-      const processedData = this.processTicketData(tickets);
-      const queryComplexity = this.calculateQueryComplexity(parsedInput.filters);
-
-      traceMetadata.total = processedData.summary.total;
-
-      const response = this.formatResponse(orgStructure, processedData);
+      // Parse and validate input early
+      const tempInput = typeof input === 'string' ? JSON.parse(input) : input;
+      parsedInput = {
+        organizationId: tempInput.organizationId || '',
+        filters: tempInput.filters || {},
+        queryType: tempInput.queryType || ''
+      };
       
-      await this.tracer.addTrace({
-        ...traceMetadata,
-        metadata: {
-          performance: {
-            duration_ms: Date.now() - startTime,
-            query_complexity: queryComplexity,
-            total_processed: processedData.summary.total
-          },
-          data: {
-            ticket_count: processedData.summary.total,
-            filters: parsedInput.filters,
-            total: processedData.summary.total,
-            processed: processedData.summary.total
+      if (!parsedInput.organizationId) {
+        throw new Error('Organization ID is required');
+      }
+      const parsedOrgId = parsedInput.organizationId as UUID;
+
+      // Initialize trace metadata
+      const traceMetadata: TracingMetadata = {
+        toolName: this.name,
+        actionType: 'query',
+        startTime,
+        organizationId: parsedOrgId,
+        context: this.currentContext
+      };
+
+      // Implement retry mechanism with backoff
+      const maxRetries = 2;
+      let retryCount = 0;
+      let lastError: Error | null = null;
+
+      while (retryCount <= maxRetries) {
+        try {
+          const { orgStructure, tickets } = await this.fetchData(parsedOrgId, parsedInput.filters || {});
+          const processedData = this.processTicketData(tickets);
+          const queryComplexity = this.calculateQueryComplexity(parsedInput.filters || {});
+
+          // Filter response based on query type
+          const filteredResponse = this.filterResponse(orgStructure, processedData, parsedInput.queryType);
+
+          traceMetadata.total = processedData.summary.total;
+          result = this.formatResponse(filteredResponse);
+          success = true;
+          
+          await this.tracer.addTrace({
+            ...traceMetadata,
+            metadata: {
+              performance: {
+                duration_ms: Date.now() - startTime,
+                query_complexity: queryComplexity,
+                total_processed: processedData.summary.total,
+                retry_count: retryCount
+              },
+              data: {
+                ticket_count: processedData.summary.total,
+                filters: parsedInput.filters,
+                total: processedData.summary.total,
+                processed: processedData.summary.total
+              }
+            }
+          });
+
+          break;
+        } catch (error) {
+          lastError = error as Error;
+          if (retryCount === maxRetries) {
+            throw error;
           }
+          retryCount++;
+          await new Promise(resolve => setTimeout(resolve, Math.pow(2, retryCount) * 1000));
+        }
+      }
+
+      const latencyMs = Date.now() - startTime;
+      const confidence = this.calculateConfidence(input, result);
+
+      await this.metricsService.recordMetrics({
+        toolName: this.name,
+        success,
+        latencyMs,
+        confidence,
+        errorType,
+        errorMessage,
+        organizationId: parsedOrgId,
+        metadata: {
+          input_type: 'organization_query',
+          data_points: Object.keys(result?.data || {}).length,
+          query_complexity: this.calculateQueryComplexity(parsedInput.filters || {}),
+          retry_count: retryCount
         }
       });
 
-      return JSON.stringify(response);
+      return JSON.stringify(result);
 
-    } catch (error) {
-      const err = error as Error;
-      await this.tracer.addTrace({
-        ...traceMetadata,
+    } catch (err) {
+      const error = err as AIToolError;
+      errorType = error.name;
+      errorMessage = error.message;
+      
+      await this.metricsService.recordMetrics({
+        toolName: this.name,
+        success: false,
+        latencyMs: Date.now() - startTime,
+        confidence: 0,
+        errorType,
+        errorMessage,
+        organizationId: parsedInput.organizationId as UUID,
         metadata: {
-          performance: {
-            duration_ms: Date.now() - startTime
-          },
-          error: {
-            message: err.message,
-            type: err.name,
-            stack: err.stack
-          }
+          error_context: error.stack
         }
       });
-      throw error;
+
+      return JSON.stringify({
+        success: false,
+        error: {
+          type: errorType,
+          message: errorMessage,
+          details: error.stack
+        }
+      });
     }
   }
 
@@ -288,15 +426,26 @@ export class OrganizationStructureTool extends Tool {
   private parseAndValidateInput(input: string) {
     try {
       const parsedInput = typeof input === 'string' ? JSON.parse(input) : input;
-      const { organizationId, filters = this.getDefaultFilters() } = parsedInput;
-
-      if (!organizationId) {
-        throw new Error("organizationId is required");
+      
+      // Validate organizationId
+      if (!parsedInput.organizationId) {
+        throw new Error("organizationId is required in the input");
       }
 
-      return { organizationId, filters };
+      // Ensure organizationId is a valid UUID
+      if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(parsedInput.organizationId)) {
+        throw new Error("organizationId must be a valid UUID");
+      }
+
+      const filters = parsedInput.filters || this.getDefaultFilters();
+
+      return { 
+        organizationId: parsedInput.organizationId as UUID, 
+        filters 
+      };
     } catch (e) {
-      throw new Error("Invalid input format");
+      const error = e as Error;
+      throw new Error(`Invalid input format: ${error.message}`);
     }
   }
 
@@ -308,10 +457,10 @@ export class OrganizationStructureTool extends Tool {
     };
   }
 
-  private async fetchData(params: { organizationId: string; filters: any }) {
+  private async fetchData(organizationId: string, filters: any) {
     const [orgStructure, tickets] = await Promise.all([
-      this.fetchOrgStructure(params.organizationId),
-      this.fetchTickets(params.organizationId, params.filters)
+      this.fetchOrgStructure(organizationId),
+      this.fetchTickets(organizationId, filters)
     ]);
 
     return { orgStructure, tickets };
@@ -323,19 +472,44 @@ export class OrganizationStructureTool extends Tool {
         p_organization_id: organizationId
       });
 
-    if (error) throw error;
+    if (error) {
+      console.error('Error fetching organization structure:', error);
+      throw new Error(`Failed to fetch organization structure: ${error.message}`);
+    }
+    
+    if (!data) {
+      throw new Error('No organization structure found');
+    }
+    
     return data;
   }
 
   private async fetchTickets(organizationId: string, filters: any) {
-    const query = this.buildTicketQuery(organizationId, filters);
-    const { data, error } = await query;
-    
-    if (error) throw error;
-    return this.mapTicketData(data || []);
+    try {
+      const query = this.buildTicketQuery(organizationId, filters);
+      const { data, error } = await query;
+      
+      if (error) {
+        console.error('Error fetching tickets:', error);
+        throw new Error(`Failed to fetch tickets: ${error.message}`);
+      }
+      
+      if (!data) {
+        return [];
+      }
+      
+      return this.mapTicketData(data);
+    } catch (error) {
+      console.error('Error in fetchTickets:', error);
+      throw error;
+    }
   }
 
   private buildTicketQuery(organizationId: string, filters: any) {
+    if (!organizationId) {
+      throw new Error('Organization ID is required for ticket query');
+    }
+
     const query = this.supabase
       .from('tickets')
       .select(`
@@ -426,6 +600,31 @@ export class OrganizationStructureTool extends Tool {
       message: 'Organization structure and ticket data retrieved successfully'
     };
   }
+
+  private filterResponse(orgStructure: any, processedData: any, queryType?: string): any {
+    switch (queryType) {
+      case 'ticket_count':
+        return {
+          tickets: {
+            summary: processedData.summary
+          }
+        };
+      case 'customer_list':
+        return {
+          customers: orgStructure.customers
+        };
+      case 'team_structure':
+        return {
+          teams: orgStructure.teams
+        };
+      default:
+        return {
+          teams: orgStructure.teams,
+          customers: orgStructure.customers,
+          tickets: processedData
+        };
+    }
+  }
 }
 
 export class TicketAssignmentTool extends Tool {
@@ -434,11 +633,58 @@ export class TicketAssignmentTool extends Tool {
   private supabase: SupabaseClient;
   private tracer: EnhancedTracer;
   private currentContext?: TracingContext;
+  private metricsService: AccuracyMetricsService;
 
   constructor(props: ToolProps) {
     super();
     this.supabase = props.supabase;
-    this.tracer = new EnhancedTracer(props.langfuse || null);
+    this.tracer = new EnhancedTracer(props.langfuse);
+    this.metricsService = new AccuracyMetricsService(
+      props.supabase, 
+      props.langsmith, 
+      props.langfuse
+    );
+  }
+
+  private calculateConfidence(input: any, result: any): number {
+    let confidence = 0;
+    
+    const factors = {
+      validInput: 0.25,
+      agentAvailability: 0.25,
+      assignmentSuccess: 0.25,
+      matchQuality: 0.25
+    };
+
+    try {
+      const parsedInput = typeof input === 'string' ? JSON.parse(input) : input;
+      
+      // Check input validity
+      if (parsedInput.ticketIds?.length > 0 && parsedInput.agentId) {
+        confidence += factors.validInput;
+      }
+
+      // Check agent availability
+      if (result?.data?.agent_available) {
+        confidence += factors.agentAvailability;
+      }
+
+      // Check assignment success
+      if (result?.success) {
+        confidence += factors.assignmentSuccess;
+      }
+
+      // Check match quality (if agent skills match ticket requirements)
+      if (result?.data?.skill_match_score > 0.7) {
+        confidence += factors.matchQuality;
+      }
+
+    } catch (error) {
+      console.error('Error calculating confidence:', error);
+      return 0;
+    }
+
+    return confidence * 100;
   }
 
   protected async _call(input: string): Promise<string> {
@@ -453,48 +699,59 @@ export class TicketAssignmentTool extends Tool {
       context: this.currentContext
     };
 
+    let success = false;
+    let errorType = undefined;
+    let errorMessage = undefined;
+    let result;
+
     try {
       const parsedInput = this.parseAndValidateInput(input);
-      traceMetadata.organizationId = parsedInput.organizationId;
+      const parsedOrgId = parsedInput.organizationId as UUID;
+      traceMetadata.organizationId = parsedOrgId;
 
-      const result = await this.assignTickets(parsedInput);
+      result = await this.assignTickets(parsedInput);
+      success = true;
       
-      await this.tracer.addTrace({
-        ...traceMetadata,
+      const latencyMs = Date.now() - startTime;
+      const confidence = this.calculateConfidence(input, result);
+
+      await this.metricsService.recordMetrics({
+        toolName: this.name,
+        success,
+        latencyMs,
+        confidence,
+        errorType,
+        errorMessage,
+        organizationId: parsedOrgId,
         metadata: {
-          performance: {
-            duration_ms: Date.now() - startTime,
-            query_complexity: this.calculateMutationComplexity(parsedInput)
-          },
-          data: {
-            ticket_count: parsedInput.ticketIds.length,
-            agent_id: parsedInput.agentId
-          }
+          tickets_count: parsedInput.ticketIds.length,
+          assignment_type: 'direct',
+          agent_id: parsedInput.agentId
         }
       });
 
       return JSON.stringify(result);
 
-    } catch (error) {
-      const err = error as Error;
-      await this.tracer.addTrace({
-        ...traceMetadata,
+    } catch (err) {
+      const error = err as AIToolError;
+      const parsedOrgId = JSON.parse(input).organizationId as UUID;
+      errorType = error.name;
+      errorMessage = error.message;
+      
+      await this.metricsService.recordMetrics({
+        toolName: this.name,
+        success: false,
+        latencyMs: Date.now() - startTime,
+        confidence: 0,
+        errorType,
+        errorMessage,
+        organizationId: parsedOrgId,
         metadata: {
-          performance: {
-            duration_ms: Date.now() - startTime
-          },
-          error: {
-            message: err.message,
-            type: err.name,
-            stack: err.stack
-          }
+          error_context: error.stack
         }
       });
 
-      return JSON.stringify({
-        success: false,
-        error: err.message
-      });
+      throw error;
     }
   }
 
