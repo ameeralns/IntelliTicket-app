@@ -3,8 +3,7 @@ import { Dialog, DialogContent, DialogTitle } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { ScrollArea } from '@/components/ui/scroll-area';
-import { RiSendPlaneFill, RiRobot2Line, RiUser3Line, RiTicketLine, RiTeamLine, RiBrainLine, RiPulseLine, RiLightbulbFlashLine } from 'react-icons/ri';
-import { AILoadingIndicator } from './AILoadingIndicator';
+import { RiSendPlaneFill, RiRobot2Line, RiUser3Line, RiTicketLine, RiTeamLine, RiBrainLine, RiPulseLine, RiLightbulbFlashLine, RiArticleLine } from 'react-icons/ri';
 import { createClientComponentClient } from '@supabase/auth-helpers-nextjs';
 import { ChatOpenAI } from '@langchain/openai';
 import { AgentExecutor, initializeAgentExecutorWithOptions } from 'langchain/agents';
@@ -13,19 +12,25 @@ import type { SupabaseClient } from '@supabase/supabase-js';
 import { Badge } from '@/components/ui/badge';
 import { SystemMessage, HumanMessage } from "@langchain/core/messages";
 import type { UUID } from 'crypto';
-import { OrganizationStructureTool, TicketAssignmentTool } from '@/lib/services/ai/AdminIntelligenceTools';
 import { ConsoleCallbackHandler } from '@langchain/core/tracers/console';
 import { LangChainTracer } from 'langchain/callbacks';
 import { Command, CommandGroup, CommandItem, CommandList } from '@/components/ui/command';
 import { motion, AnimatePresence } from 'framer-motion';
 import { cn } from '@/lib/utils';
 import { Client } from 'langsmith';
-import { KnowledgeArticleTool } from '@/lib/services/ai/AgentIntelligenceTools';
+import { 
+  ChatInteractionTool, 
+  CustomerFetchTool, 
+  KnowledgeArticleTool, 
+  AgentTicketsTool,
+  TicketUpdateTool 
+} from '@/lib/services/ai/AgentIntelligenceTools';
 
 // Types
 interface Ticket {
   ticket_id: UUID;
   title: string;
+  description?: string;
   status: string;
   priority: string;
   agent_id?: UUID;
@@ -33,23 +38,30 @@ interface Ticket {
   created_at: Date;
   assigned_at?: Date;
   updated_at: Date;
+  resolved_at?: Date;
+  satisfaction_score?: number;
+  customer?: {
+    customer_id: string;
+    name: string;
+    email: string;
+  };
 }
 
 interface OrgCustomer {
+  customer_id: string;
   name: string;
   email: string;
-  customer_id: string;
+  phone?: string;
   total_tickets?: number;
 }
 
-interface Agent {
-  agent_id: UUID;
-  name: string;
-  email: string;
-  role: string;
-  team_name: string;
-  ticket_count: number;
-  organization_id: UUID;
+interface KnowledgeArticle {
+  article_id: UUID;
+  title: string;
+  category: string;
+  content: string;
+  created_at: Date;
+  updated_at: Date;
 }
 
 interface Message {
@@ -77,12 +89,12 @@ interface Message {
 
 interface SelectedEntity {
   id: string;
-  type: 'ticket' | 'customer' | 'agent';
+  type: 'ticket' | 'customer' | 'article';
   label: string;
   metadata?: Record<string, any>;
 }
 
-interface AdminIntelligenceModalProps {
+interface AgentIntelligenceModalProps {
   isOpen: boolean;
   onClose: () => void;
   organizationId: UUID;
@@ -96,39 +108,76 @@ interface MentionState {
   items: Array<{
     id: string;
     label: string;
-    type?: 'ticket' | 'customer' | 'agent';
+    type?: 'ticket' | 'customer' | 'article';
     metadata?: Record<string, any>;
   }>;
   position: { top: number; left: number } | null;
-  selectedCategory?: 'ticket' | 'customer' | 'agent';
+  selectedCategory?: 'ticket' | 'customer' | 'article';
 }
 
-// Add color constants at the top with other interfaces
+// Constants
 const TYPE_COLORS = {
   ticket: 'text-blue-500',
-  agent: 'text-green-500',
-  customer: 'text-purple-500'
+  customer: 'text-purple-500',
+  article: 'text-amber-500'
 } as const;
 
-// Update the SYSTEM_PROMPT constant
-const SYSTEM_PROMPT = `You are an AI assistant helping manage a customer support system.
-You have access to information about tickets, teams, and customers.
+const SYSTEM_PROMPT = `You are an AI assistant helping support agents handle customer inquiries.
+You have access to the following capabilities through specialized tools:
 
-Your goal is to help users manage tickets and team workload efficiently.
-You can:
-1. View and analyze ticket data
-2. Suggest ticket assignments
-3. Provide workload insights
-4. Answer questions about team performance
+1. Chat Interaction Tool (create_chat_interaction):
+   - Create chat interactions with context
+   - Handle customer inquiries
+   - Reference knowledge articles
+   - Track interaction history
+   - Required input fields: ticketId, agentId, message
+   - Optional fields: customerId, isPrivate, metadata
+
+2. Customer Management Tool (fetch_agent_customers):
+   - Access customer information
+   - View customer ticket history
+   - Get customer context for better support
+   - Required input fields: agentId
+   - Optional fields: filters (status, timeframe)
+
+3. Knowledge Base Tool (create_knowledge_article):
+   - Create new knowledge articles
+   - Document solutions and best practices
+   - Categorize and tag articles for easy reference
+   - Required input fields: title, content, category
+   - Optional fields: tags, sourceTicketIds, metadata
+
+4. Ticket Management Tool (fetch_agent_tickets):
+   - View assigned tickets
+   - Filter by status, priority, and timeframe
+   - Access ticket history and context
+   - Required input fields: agentId
+   - Optional fields: filters (status, priority, timeframe)
+
+5. Ticket Update Tool (update_ticket):
+   - Update ticket status and other fields
+   - Change priorities and assignments
+   - Add responses and metadata
+   - Required input fields: ticket_id
+   - Optional fields: status, priority, customer_priority, category, assigned_to, response, response_quality, metadata
+
+When using tools:
+- Always provide input as a properly formatted JSON object
+- Include all required fields for each tool
+- Add optional fields when relevant
+- The input will be automatically enriched with organizationId and agentId
 
 When responding:
 - Be concise but informative
-- Prioritize urgent tickets
-- Consider agent workload and expertise
-- Provide clear actionable recommendations
+- Prioritize customer satisfaction
+- Reference relevant knowledge articles
+- Provide clear actionable steps
+- Use the appropriate tool for each task
+- Consider ticket priority and status
 
 Current context:
 Organization ID: {organizationId}
+Agent Role: {agentRole}
 Previous Messages: {previousMessages}
 
 How can I assist you today?`;
@@ -136,15 +185,15 @@ How can I assist you today?`;
 // Add this interface for entity references
 interface EntityReference {
   id: string;
-  type: 'ticket' | 'customer' | 'agent';
+  type: 'ticket' | 'customer' | 'article';
   value: string;
   metadata?: {
     name?: string;
     email?: string;
     status?: string;
     priority?: string;
-    team?: string;
-    role?: string;
+    category?: string;
+    content?: string;
     index?: number;
     length?: number;
   };
@@ -155,22 +204,22 @@ interface TextBlock {
   type: 'text' | 'mention';
   content: string;
   entityId?: string;
-  entityType?: 'ticket' | 'customer' | 'agent';
+  entityType?: 'ticket' | 'customer' | 'article';
   entityLabel?: string;
 }
 
-// Update the InputArea component
+// Add InputArea component before the main component
 const InputArea: React.FC<{
   value: string;
   onChange: (e: React.ChangeEvent<HTMLTextAreaElement>) => void;
   onKeyDown: (e: React.KeyboardEvent<HTMLTextAreaElement>) => void;
   disabled: boolean;
-  mentions: Array<{ 
-    id: string; 
-    type: keyof typeof TYPE_COLORS; 
-    label: string; 
-    index: number; 
-    length: number; 
+  mentions: Array<{
+    id: string;
+    type: keyof typeof TYPE_COLORS;
+    label: string;
+    index: number;
+    length: number;
   }>;
 }> = ({ value, onChange, onKeyDown, disabled, mentions }) => {
   const textareaRef = useRef<HTMLTextAreaElement>(null);
@@ -207,15 +256,15 @@ const InputArea: React.FC<{
             "inline-flex items-center gap-1 bg-gradient-to-r p-[1px] rounded-full mx-1",
             {
               'from-blue-500/20 to-blue-600/20 text-blue-300': mention.type === 'ticket',
-              'from-green-500/20 to-green-600/20 text-green-300': mention.type === 'agent',
-              'from-purple-500/20 to-purple-600/20 text-purple-300': mention.type === 'customer'
+              'from-purple-500/20 to-purple-600/20 text-purple-300': mention.type === 'customer',
+              'from-amber-500/20 to-amber-600/20 text-amber-300': mention.type === 'article'
             }
           )}
         >
           <span className="px-2 py-0.5 bg-gray-900/90 rounded-full flex items-center gap-1">
             {mention.type === 'ticket' && <RiTicketLine className="w-3 h-3" />}
-            {mention.type === 'agent' && <RiTeamLine className="w-3 h-3" />}
             {mention.type === 'customer' && <RiUser3Line className="w-3 h-3" />}
+            {mention.type === 'article' && <RiArticleLine className="w-3 h-3" />}
             {mention.label}
           </span>
         </Badge>
@@ -260,34 +309,7 @@ const InputArea: React.FC<{
   );
 };
 
-interface TicketSummary {
-  total: number;
-  by_priority: Record<string, number>;
-  by_status: Record<string, number>;
-}
-
-interface TicketData {
-  ticket_id: string;
-  title: string;
-  status: string;
-  priority: string;
-  created_at: string;
-  updated_at: string;
-  customer: {
-    name: string;
-    email: string;
-    customer_id: string;
-  };
-}
-
-interface AgentWithWorkload extends Agent {
-  workload: {
-    current: number;
-    capacity: number;
-  };
-}
-
-export function AdminIntelligenceModal({ isOpen, onClose }: Omit<AdminIntelligenceModalProps, 'organizationId'>) {
+export function AgentIntelligenceModal({ isOpen, onClose }: Omit<AgentIntelligenceModalProps, 'organizationId'>) {
   const supabase = createClientComponentClient();
   const inputRef = useRef<HTMLInputElement>(null);
   
@@ -297,7 +319,7 @@ export function AdminIntelligenceModal({ isOpen, onClose }: Omit<AdminIntelligen
   const [messages, setMessages] = useState<Message[]>([
     {
       role: 'assistant',
-      content: 'Hello! I\'m your AI assistant. I can help you manage tickets and team workload. What would you like to know?',
+      content: 'Hello! I\'m your AI assistant. I can help you handle customer inquiries and find relevant information. What would you like to know?',
       timestamp: new Date(),
     },
   ]);
@@ -305,7 +327,7 @@ export function AdminIntelligenceModal({ isOpen, onClose }: Omit<AdminIntelligen
   const [error, setError] = useState<string | null>(null);
   const [tickets, setTickets] = useState<Ticket[]>([]);
   const [customers, setCustomers] = useState<OrgCustomer[]>([]);
-  const [agents, setAgents] = useState<Agent[]>([]);
+  const [knowledgeArticles, setKnowledgeArticles] = useState<KnowledgeArticle[]>([]);
   const [selectedEntities, setSelectedEntities] = useState<SelectedEntity[]>([]);
   const [mention, setMention] = useState<MentionState>({
     isOpen: false,
@@ -335,7 +357,7 @@ export function AdminIntelligenceModal({ isOpen, onClose }: Omit<AdminIntelligen
 
   const openaiClient = useMemo(() => {
     const tracer = new LangChainTracer({
-      projectName: process.env.NEXT_PUBLIC_LANGSMITH_PROJECT || "intelliticket-admin-ai",
+      projectName: process.env.NEXT_PUBLIC_LANGSMITH_PROJECT_2 || "intelliticket-agent-ai",
       client: langsmithClient,
     });
 
@@ -362,6 +384,7 @@ export function AdminIntelligenceModal({ isOpen, onClose }: Omit<AdminIntelligen
     });
   }, [langsmithClient]);
 
+  // Initialize tools with memoization
   const tools = useMemo(() => {
     if (!supabase || !langsmithClient) return [];
 
@@ -371,9 +394,11 @@ export function AdminIntelligenceModal({ isOpen, onClose }: Omit<AdminIntelligen
     };
 
     return [
-      new OrganizationStructureTool(toolConfig),
-      new TicketAssignmentTool(toolConfig),
-      new KnowledgeArticleTool(toolConfig)
+      new ChatInteractionTool(toolConfig),
+      new CustomerFetchTool(toolConfig),
+      new KnowledgeArticleTool(toolConfig),
+      new AgentTicketsTool(toolConfig),
+      new TicketUpdateTool(toolConfig)
     ];
   }, [supabase, langsmithClient]);
 
@@ -395,7 +420,7 @@ export function AdminIntelligenceModal({ isOpen, onClose }: Omit<AdminIntelligen
         if (!agentData?.organization_id) throw new Error('No organization found');
 
         setOrganizationId(agentData.organization_id as UUID);
-    } catch (error) {
+      } catch (error) {
         console.error('Error fetching organization ID:', error);
         setError('Failed to load organization data. Please try again.');
       }
@@ -409,73 +434,121 @@ export function AdminIntelligenceModal({ isOpen, onClose }: Omit<AdminIntelligen
 
     const fetchData = async () => {
       try {
-        // Fetch tickets
+        // Get current agent's ID
+        const { data: { user }, error: userError } = await supabase.auth.getUser();
+        if (userError) throw userError;
+        if (!user?.email) throw new Error('No user email found');
+
+        const { data: agentData, error: agentError } = await supabase
+          .from('agents')
+          .select('agent_id')
+          .eq('email', user.email)
+          .single();
+
+        if (agentError) throw agentError;
+        if (!agentData?.agent_id) throw new Error('Agent ID not found');
+
+        // First, fetch tickets assigned to the agent
         const { data: ticketsData, error: ticketsError } = await supabase
           .from('tickets')
           .select(`
-              ticket_id,
-              title,
-              status,
-              priority,
-            assigned_to,
+            ticket_id,
+            title,
+            description,
+            status,
+            priority,
+            agent_id,
+            customer_id,
             organization_id,
             created_at,
             assigned_at,
-            updated_at
+            updated_at,
+            resolved_at,
+            satisfaction_score
           `)
           .eq('organization_id', organizationId)
-          .order('created_at', { ascending: false });
+          .eq('agent_id', agentData.agent_id)
+          .not('status', 'eq', 'closed')
+          .order('updated_at', { ascending: false });
 
         if (ticketsError) throw ticketsError;
-        setTickets(ticketsData || []);
 
-        // Fetch agents
-        const { data: agentsData, error: agentsError } = await supabase
-          .from('agents')
-          .select(`
-            agent_id,
-            name,
-            email,
-            role,
-            team_id,
-            organization_id,
-            teams (
-              name
-            ),
-            assigned_tickets:tickets!tickets_assigned_to_fkey(count)
-          `)
-          .eq('organization_id', organizationId);
+        // Get unique customer IDs from the tickets
+        const uniqueCustomerIds = [...new Set(ticketsData?.map(ticket => ticket.customer_id) || [])];
 
-        if (agentsError) throw agentsError;
-        setAgents(agentsData?.map(agent => ({
-          agent_id: agent.agent_id,
-          name: agent.name,
-          email: agent.email,
-          role: agent.role,
-          team_name: agent.teams?.[0]?.name || 'Unassigned',
-          ticket_count: agent.assigned_tickets?.[0]?.count || 0,
-          organization_id: agent.organization_id
-        })) || []);
-
-        // Fetch customers
+        // Fetch customer details for the unique customer IDs
         const { data: customersData, error: customersError } = await supabase
           .from('customers')
           .select(`
             customer_id,
             name,
             email,
-            organization_id,
-            tickets:tickets(count)
+            phone
           `)
-          .eq('organization_id', organizationId);
+          .in('customer_id', uniqueCustomerIds);
 
         if (customersError) throw customersError;
-        setCustomers(customersData?.map(customer => ({
-          ...customer,
-          total_tickets: customer.tickets?.[0]?.count || 0
-        })) || []);
 
-    } catch (error) {
+        // Create a map of customers for easy lookup
+        const customerMap = new Map(
+          customersData?.map(customer => [customer.customer_id, customer]) || []
+        );
+
+        // Process tickets with customer information
+        const processedTickets = (ticketsData || []).map(ticket => ({
+          ticket_id: ticket.ticket_id as UUID,
+          title: ticket.title,
+          description: ticket.description,
+          status: ticket.status,
+          priority: ticket.priority,
+          agent_id: ticket.agent_id as UUID,
+          organization_id: ticket.organization_id as UUID,
+          created_at: new Date(ticket.created_at),
+          assigned_at: ticket.assigned_at ? new Date(ticket.assigned_at) : undefined,
+          updated_at: new Date(ticket.updated_at),
+          resolved_at: ticket.resolved_at ? new Date(ticket.resolved_at) : undefined,
+          satisfaction_score: ticket.satisfaction_score,
+          customer: customerMap.get(ticket.customer_id) ? {
+            customer_id: customerMap.get(ticket.customer_id)!.customer_id,
+            name: customerMap.get(ticket.customer_id)!.name,
+            email: customerMap.get(ticket.customer_id)!.email
+          } : undefined
+        }));
+
+        setTickets(processedTickets);
+
+        // Process unique customers with their ticket counts
+        const processedCustomers = customersData?.map(customer => {
+          const customerTickets = ticketsData?.filter(t => t.customer_id === customer.customer_id) || [];
+          return {
+            customer_id: customer.customer_id,
+            name: customer.name,
+            email: customer.email,
+            phone: customer.phone,
+            total_tickets: customerTickets.length
+          };
+        }) || [];
+
+        setCustomers(processedCustomers);
+
+        // Fetch knowledge articles for the organization
+        const { data: articlesData, error: articlesError } = await supabase
+          .from('knowledge_articles')
+          .select(`
+            article_id,
+            title,
+            category,
+            content,
+            created_at,
+            updated_at
+          `)
+          .eq('organization_id', organizationId)
+          .order('created_at', { ascending: false });
+
+        if (articlesError) throw articlesError;
+        setKnowledgeArticles(articlesData || []);
+
+      } catch (error) {
         console.error('Error fetching data:', error);
         setError(error instanceof Error ? error.message : 'Failed to load data. Please try again.');
       }
@@ -499,44 +572,59 @@ export function AdminIntelligenceModal({ isOpen, onClose }: Omit<AdminIntelligen
     );
   }
 
-  // Update getItemsByType to properly filter items based on search
-  const getItemsByType = (type: 'ticket' | 'customer' | 'agent', search: string = '') => {
+  // Add helper functions
+  const getItemsByType = (type: 'ticket' | 'customer' | 'article', search: string = '') => {
     const searchLower = search.toLowerCase();
     
     switch (type) {
       case 'ticket':
         return tickets
-          .filter(t => t.title.toLowerCase().includes(searchLower))
+          .filter(t => 
+            t.title.toLowerCase().includes(searchLower) || 
+            t.customer?.name.toLowerCase().includes(searchLower)
+          )
           .map(t => ({
             id: t.ticket_id,
-            label: t.title,
+            label: `${t.title} (${t.status}, ${t.priority})${t.customer ? ` - ${t.customer.name}` : ''}`,
             type: 'ticket' as const,
-            metadata: { status: t.status, priority: t.priority }
-          }));
-      case 'agent':
-        return agents
-          .filter(a => a.name.toLowerCase().includes(searchLower))
-          .map(a => ({
-            id: a.agent_id,
-            label: a.name,
-            type: 'agent' as const,
-            metadata: { role: a.role, team: a.team_name }
+            metadata: { 
+              status: t.status, 
+              priority: t.priority,
+              customer: t.customer 
+            }
           }));
       case 'customer':
         return customers
-          .filter(c => c.name.toLowerCase().includes(searchLower))
+          .filter(c => 
+            c.name.toLowerCase().includes(searchLower) || 
+            c.email.toLowerCase().includes(searchLower)
+          )
           .map(c => ({
             id: c.customer_id,
-            label: c.name,
+            label: `${c.name} (${c.total_tickets} active tickets)`,
             type: 'customer' as const,
-            metadata: { email: c.email }
+            metadata: { 
+              email: c.email,
+              total_tickets: c.total_tickets 
+            }
+          }));
+      case 'article':
+        return knowledgeArticles
+          .filter(a => 
+            a.title.toLowerCase().includes(searchLower) || 
+            a.category.toLowerCase().includes(searchLower)
+          )
+          .map(a => ({
+            id: a.article_id,
+            label: `${a.title} (${a.category})`,
+            type: 'article' as const,
+            metadata: { category: a.category }
           }));
       default:
         return [];
     }
   };
 
-  // Update handleInputChange to properly track mention positions
   const handleInputChange = (e: React.ChangeEvent<HTMLTextAreaElement>) => {
     const value = e.target.value;
     const cursorPosition = e.target.selectionStart;
@@ -560,8 +648,8 @@ export function AdminIntelligenceModal({ isOpen, onClose }: Omit<AdminIntelligen
           search: searchText,
           items: [
             { id: 'ticket', label: 'Tickets', type: 'ticket' },
-            { id: 'agent', label: 'Agents', type: 'agent' },
-            { id: 'customer', label: 'Customers', type: 'customer' }
+            { id: 'customer', label: 'Customers', type: 'customer' },
+            { id: 'article', label: 'Knowledge Articles', type: 'article' }
           ],
           position: null
         });
@@ -590,11 +678,10 @@ export function AdminIntelligenceModal({ isOpen, onClose }: Omit<AdminIntelligen
     });
   };
 
-  // Update handleMentionSelect to properly insert badges
-  const handleMentionSelect = (item: { id: string; label: string; type?: 'ticket' | 'customer' | 'agent' }) => {
+  const handleMentionSelect = (item: { id: string; label: string; type?: 'ticket' | 'customer' | 'article' }) => {
     if (mention.type === 'category') {
       // When selecting a category, show filtered items of that type
-      const items = getItemsByType(item.type as 'ticket' | 'customer' | 'agent', '');
+      const items = getItemsByType(item.type as 'ticket' | 'customer' | 'article', '');
       setMention(prev => ({
         ...prev,
         type: 'item',
@@ -639,14 +726,13 @@ export function AdminIntelligenceModal({ isOpen, onClose }: Omit<AdminIntelligen
       // Update selected entities
       handleEntitySelect({
         id: item.id,
-        type: item.type as 'ticket' | 'customer' | 'agent',
+        type: item.type as 'ticket' | 'customer' | 'article',
         label: item.label,
         metadata: mention.items.find(i => i.id === item.id)?.metadata
       });
     }
   };
 
-  // Handle entity selection
   const handleEntitySelect = (entity: SelectedEntity) => {
     setSelectedEntities(prev => {
       const exists = prev.some(e => e.id === entity.id);
@@ -655,27 +741,11 @@ export function AdminIntelligenceModal({ isOpen, onClose }: Omit<AdminIntelligen
     });
   };
 
-  // Remove selected entity
   const removeEntity = (entityId: string) => {
     setSelectedEntities(prev => prev.filter(e => e.id !== entityId));
   };
 
-  // Add this helper function before handleSubmit
-  const isFollowUpQuestion = (currentQuery: string, previousMessages: Message[]) => {
-    const lastUserMessage = [...previousMessages].reverse().find(m => m.role === 'user');
-    if (!lastUserMessage) return false;
-
-    // Check if current query is a follow-up about customers
-    if (lastUserMessage.content.toLowerCase().includes('customer') &&
-        (currentQuery.includes('their') || currentQuery.includes('them'))) {
-      return 'customers';
-    }
-
-    // Add more follow-up patterns as needed
-    return false;
-  };
-
-  // Update the renderMessage function to respect the showThought flag
+  // Add message rendering function
   const renderMessage = (message: Message) => {
     const renderUserContent = (content: string, metadata?: Message['metadata']) => {
       if (!metadata?.mentions || metadata.mentions.length === 0) {
@@ -705,15 +775,15 @@ export function AdminIntelligenceModal({ isOpen, onClose }: Omit<AdminIntelligen
               "inline-flex items-center gap-1 bg-gradient-to-r p-[1px] rounded-full mx-1 align-baseline",
               {
                 'from-blue-500/20 to-blue-600/20 text-blue-300': mention.type === 'ticket',
-                'from-green-500/20 to-green-600/20 text-green-300': mention.type === 'agent',
-                'from-purple-500/20 to-purple-600/20 text-purple-300': mention.type === 'customer'
+                'from-purple-500/20 to-purple-600/20 text-purple-300': mention.type === 'customer',
+                'from-amber-500/20 to-amber-600/20 text-amber-300': mention.type === 'article'
               }
             )}
           >
             <span className="px-2 py-0.5 bg-gray-900/90 rounded-full flex items-center gap-1">
               {mention.type === 'ticket' && <RiTicketLine className="w-3 h-3" />}
-              {mention.type === 'agent' && <RiTeamLine className="w-3 h-3" />}
               {mention.type === 'customer' && <RiUser3Line className="w-3 h-3" />}
+              {mention.type === 'article' && <RiArticleLine className="w-3 h-3" />}
               {mention.label}
             </span>
           </Badge>
@@ -790,199 +860,13 @@ export function AdminIntelligenceModal({ isOpen, onClose }: Omit<AdminIntelligen
     );
   };
 
-  // Update handleSubmit to properly initialize the agent
-  const handleSubmit = async (e?: React.FormEvent) => {
-    e?.preventDefault();
-    if (!input.trim() || isProcessing || !organizationId) return;
-
-    setIsProcessing(true);
-    setError(null);
-
-    try {
-      // Create entity references while preserving exact message structure
-      const entityReferences: EntityReference[] = mentions.map(mention => ({
-        id: mention.id,
-        type: mention.type,
-        value: mention.label,
-        metadata: {
-          index: mention.index,
-          length: mention.length
-        }
-      }));
-
-      // Store the exact user input with badge positions
-      const userMessage: Message = {
-        role: 'user',
-        content: input,
-        timestamp: new Date(),
-        metadata: { 
-          entityReferences,
-          originalInput: input,
-          mentions: mentions
-        }
-      };
-      setMessages(prev => [...prev, userMessage]);
-
-      // Create AI message version with entity references
-      let aiMessage = input;
-      mentions.sort((a, b) => b.index - a.index).forEach(mention => {
-        aiMessage = aiMessage.slice(0, mention.index) + 
-                   `<${mention.type}:${mention.id}>` + 
-                   aiMessage.slice(mention.index + mention.length);
-      });
-
-      // Create wrapped tools with context
-      const wrappedTools = tools.map(tool => {
-        const originalCall = tool.call.bind(tool);
-        tool.call = async (input: any) => {
-          // Parse input if it's a string
-          const parsedInput = typeof input === 'string' ? JSON.parse(input) : input;
-          
-          // Add organizationId to the input
-          const enrichedInput = {
-            ...parsedInput,
-            organizationId
-          };
-
-          // Call the original tool with the enriched input
-          return originalCall(JSON.stringify(enrichedInput));
-        };
-        return tool;
-      });
-
-      // Initialize agent with wrapped tools and enhanced context
-      const agent = await initializeAgentExecutorWithOptions(wrappedTools, openaiClient, {
-        agentType: "chat-zero-shot-react-description",
-        verbose: true,
-        maxIterations: 5,
-        returnIntermediateSteps: true,
-        callbacks: [
-          new LangChainTracer({
-            projectName: process.env.NEXT_PUBLIC_LANGSMITH_PROJECT || "intelliticket-admin-ai",
-            client: langsmithClient,
-          })
-        ],
-        agentArgs: {
-          prefix: SYSTEM_PROMPT,
-          inputVariables: ["input", "organizationId", "previousMessages"]
-        }
-      });
-
-      if (!agent) throw new Error('Failed to initialize AI assistant');
-
-      // Execute agent with enhanced context
-      const result = await agent.invoke({
-        input: aiMessage,
-        organizationId,
-        previousMessages: messages.slice(-5).map(m => ({
-          role: m.role,
-          content: m.content
-        }))
-      });
-
-      // Parse and format the response
-      let response = result.output || 'Request processed successfully.';
-      let showThought = true;
-
-      // If we have intermediate steps, try to enhance the response
-      if (result.intermediateSteps?.length > 0) {
-        const lastStep = result.intermediateSteps[result.intermediateSteps.length - 1];
-        if (lastStep.observation) {
-          try {
-            const parsedObservation = JSON.parse(lastStep.observation);
-            if (!parsedObservation.success) {
-              throw new Error(parsedObservation.error || 'Failed to process request');
-            }
-            
-            // Format the response based on the data structure
-            const { data } = parsedObservation;
-            // Only format as ticket response if we have ticket summary data AND no teams/agents data
-            if (data?.tickets?.summary && !data?.teams) {
-              response = formatTicketResponse(
-                data.tickets.summary as TicketSummary,
-                data.tickets.categorized as Record<string, TicketData[]>,
-                data.teams as AgentWithWorkload[]
-              );
-              showThought = false;
-            } else if (data?.teams) {
-              // If we have teams data, use the agent's formatted response
-              response = result.output;
-              showThought = true;
-            }
-          } catch (e) {
-            console.error('Error enhancing response:', e);
-            // Fall back to the agent's output if we can't enhance the response
-            response = result.output;
-          }
-        }
-      }
-
-      // Add assistant message with enhanced metadata
-      const assistantMessage: Message = {
-        role: 'assistant',
-        content: response,
-        timestamp: new Date(),
-        metadata: {
-          execution_time: Date.now() - userMessage.timestamp.getTime(),
-          entityReferences,
-          thought: result.intermediateSteps?.[0]?.action?.log,
-          action: result.intermediateSteps?.[0]?.action?.tool,
-          showThought
-        }
-      };
-      setMessages(prev => [...prev, assistantMessage]);
-
-      // Clear input state
-      setInput('');
-      setSelectedEntities([]);
-      setMentions([]);
-      setMention({
-        isOpen: false,
-        type: 'category',
-        trigger: '',
-        search: '',
-        items: [],
-        position: null
-      });
-
-    } catch (error) {
-      console.error('Error processing message:', error);
-      setError(error instanceof Error ? error.message : 'Failed to process your request. Please try again.');
-    } finally {
-      setIsProcessing(false);
-    }
-  };
-
-  // Add resetChat function before the return statement
-  const resetChat = () => {
-    setMessages([
-      {
-        role: 'assistant',
-        content: 'Hello! I\'m your AI assistant. I can help you manage tickets and team workload. What would you like to know?',
-      timestamp: new Date(),
-      },
-    ]);
-    setInput('');
-    setSelectedEntities([]);
-    setMention({
-      isOpen: false,
-      type: 'category',
-      trigger: '',
-      search: '',
-      items: [],
-      position: null
-    });
-    setTextBlocks([{ type: 'text', content: '' }]);
-    setCurrentBlockIndex(0);
-  };
-
-  // Update handleKeyDown function to properly handle keyboard navigation
+  // Add keyboard handling function
   const handleKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
     if (e.key === 'Enter') {
       if (mention.isOpen) {
         e.preventDefault();
-          return;
-        }
+        return;
+      }
       if (!e.shiftKey) {
         e.preventDefault();
         handleSubmit();
@@ -1025,56 +909,320 @@ export function AdminIntelligenceModal({ isOpen, onClose }: Omit<AdminIntelligen
     }
   };
 
-  // Add this helper method to the class:
-  const formatTicketResponse = (
-    summary: TicketSummary,
-    categorized: Record<string, TicketData[]>,
-    teams: AgentWithWorkload[]
-  ): string => {
-    const priorities = ['urgent', 'high', 'medium', 'low'];
-    let response = `I found ${summary.total} tickets:\n\n`;
-
-    // Add summary section
-    response += 'Summary:\n';
-    priorities.forEach(priority => {
-      const count = summary.by_priority[priority] || 0;
-      response += `• ${priority.charAt(0).toUpperCase() + priority.slice(1)}: ${count} tickets\n`;
+  // Add reset chat function
+  const resetChat = () => {
+    setMessages([
+      {
+        role: 'assistant',
+        content: 'Hello! I\'m your AI assistant. I can help you handle customer inquiries and find relevant information. What would you like to know?',
+        timestamp: new Date(),
+      },
+    ]);
+    setInput('');
+    setSelectedEntities([]);
+    setMention({
+      isOpen: false,
+      type: 'category',
+      trigger: '',
+      search: '',
+      items: [],
+      position: null
     });
-
-    // Add detailed sections for each priority
-    priorities.forEach(priority => {
-      const tickets = categorized[priority];
-      if (tickets?.length > 0) {
-        response += `\n${priority.charAt(0).toUpperCase() + priority.slice(1)} Priority Tickets:\n`;
-        tickets.forEach(ticket => {
-          response += `• ${ticket.title} - Customer: ${ticket.customer.name}\n`;
-          response += `  Status: ${ticket.status}, Created: ${new Date(ticket.created_at).toLocaleDateString()}\n`;
-        });
-      }
-    });
-
-    // Add recommendations if there are unassigned tickets
-    if (summary.total > 0) {
-      response += '\nRecommended Actions:\n';
-      const availableAgents = teams
-        .filter(agent => agent.workload.current < agent.workload.capacity)
-        .sort((a, b) => a.workload.current - b.workload.current);
-
-      if (summary.by_priority.urgent > 0) {
-        const seniorAgents = availableAgents.filter(agent => 
-          agent.role.toLowerCase().includes('senior')
-        );
-        response += `1. Assign urgent tickets to ${
-          seniorAgents.length > 0 ? 'available senior agents' : 'experienced team members'
-        }\n`;
-      }
-      
-      response += `2. Distribute remaining tickets based on current workload and agent expertise\n`;
-    }
-
-    return response;
+    setTextBlocks([{ type: 'text', content: '' }]);
+    setCurrentBlockIndex(0);
   };
 
+  // Add formatToolResponse helper function
+  const formatToolResponse = (toolName: string, result: string): string => {
+    if (!result) {
+      return 'Operation completed successfully.';
+    }
+
+    try {
+      const parsedResult = typeof result === 'string' ? JSON.parse(result) : result;
+
+      switch (toolName) {
+        case 'create_chat_interaction':
+          return `Created chat interaction successfully. ${
+            parsedResult.metadata?.requires_followup ? 'This interaction requires follow-up.' : ''
+          }`;
+
+        case 'fetch_agent_customers':
+          if (!parsedResult.customers?.length) {
+            return 'No customers found matching the criteria.';
+          }
+          return `Found ${parsedResult.total} customer(s):\n${
+            parsedResult.customers.map((customer: any) => 
+              `• ${customer.name} (${customer.metrics.total_tickets} tickets, ${customer.metrics.open_tickets} open)`
+            ).join('\n')
+          }`;
+
+        case 'create_knowledge_article':
+          if (!parsedResult.draft_id) {
+            return 'Knowledge article creation initiated.';
+          }
+          return `Created knowledge article: "${parsedResult.title}" in category "${parsedResult.category}".${
+            parsedResult.metadata?.embedding_job_created ? '\nArticle will be indexed for search.' : ''
+          }`;
+
+        case 'fetch_agent_tickets':
+          if (!parsedResult.tickets?.length) {
+            return 'No tickets found matching the criteria.';
+          }
+          return `Found ${parsedResult.total} ticket(s):\n${
+            parsedResult.tickets.map((ticket: any) => 
+              `• ${ticket.title} (${ticket.status}, ${ticket.priority} priority)`
+            ).join('\n')
+          }`;
+
+        default:
+          return typeof parsedResult === 'string' ? parsedResult : JSON.stringify(parsedResult, null, 2);
+      }
+    } catch (error) {
+      console.error('Error formatting tool response:', error);
+      return result || 'Operation completed successfully.';
+    }
+  };
+
+  // Update handleSubmit to use formatToolResponse
+  const handleSubmit = async (e?: React.FormEvent) => {
+    e?.preventDefault();
+    if (!input.trim() || isProcessing || !organizationId || !tools.length) return;
+
+    setIsProcessing(true);
+    setError(null);
+
+    try {
+      // Get current agent's ID
+      const { data: { user }, error: userError } = await supabase.auth.getUser();
+      if (userError) throw userError;
+      
+      const { data: agentData, error: agentError } = await supabase
+        .from('agents')
+        .select('agent_id, role')
+        .eq('email', user?.email)
+        .single();
+      
+      if (agentError) throw agentError;
+      if (!agentData?.agent_id) throw new Error('Agent ID not found');
+
+      // Create entity references while preserving exact message structure
+      const entityReferences: EntityReference[] = mentions.map(mention => {
+        let metadata = {};
+        
+        switch (mention.type) {
+          case 'ticket':
+            const ticket = tickets.find(t => t.ticket_id === mention.id);
+            metadata = {
+              status: ticket?.status,
+              priority: ticket?.priority,
+              index: mention.index,
+              length: mention.length
+            };
+            break;
+          case 'customer':
+            const customer = customers.find(c => c.customer_id === mention.id);
+            metadata = {
+              email: customer?.email,
+              index: mention.index,
+              length: mention.length
+            };
+            break;
+          case 'article':
+            const article = knowledgeArticles.find(a => a.article_id === mention.id);
+            metadata = {
+              category: article?.category,
+              index: mention.index,
+              length: mention.length
+            };
+            break;
+        }
+
+        return {
+          id: mention.id,
+          type: mention.type,
+          value: mention.label,
+          metadata
+        };
+      });
+
+      // Store the exact user input with badge positions
+      const userMessage: Message = {
+        role: 'user',
+        content: input,
+        timestamp: new Date(),
+        metadata: { 
+          entityReferences,
+          originalInput: input,
+          mentions: mentions
+        }
+      };
+      setMessages(prev => [...prev, userMessage]);
+
+      // Create AI message version with entity references
+      let aiMessage = input;
+      mentions.sort((a, b) => b.index - a.index).forEach(mention => {
+        aiMessage = aiMessage.slice(0, mention.index) + 
+                   `<${mention.type}:${mention.id}>` + 
+                   aiMessage.slice(mention.index + mention.length);
+      });
+
+      // Create wrapped tools with context
+      const wrappedTools = tools.map(tool => {
+        const originalCall = tool.call.bind(tool);
+        tool.call = async (input: any) => {
+          // Parse input if it's a string
+          const parsedInput = typeof input === 'string' ? JSON.parse(input) : input;
+          
+          // Add organizationId and agentId to the input
+          const enrichedInput = {
+            ...parsedInput,
+            organizationId,
+            agentId: agentData.agent_id
+          };
+
+          // Call the original tool with the enriched input
+          return originalCall(JSON.stringify(enrichedInput));
+        };
+        return tool;
+      });
+
+      // Initialize agent with wrapped tools and enhanced context
+      const agent = await initializeAgentExecutorWithOptions(wrappedTools, openaiClient, {
+        agentType: "chat-zero-shot-react-description",
+        verbose: true,
+        maxIterations: 5,
+        returnIntermediateSteps: true,
+        callbacks: [
+          new LangChainTracer({
+            projectName: process.env.NEXT_PUBLIC_LANGSMITH_PROJECT_2 || "intelliticket-agent-ai",
+            client: langsmithClient,
+          })
+        ],
+        agentArgs: {
+          prefix: SYSTEM_PROMPT
+            .replace('{organizationId}', organizationId)
+            .replace('{agentRole}', agentData.role)
+            .replace('{previousMessages}', messages.slice(-5).map(m => 
+              `${m.role}: ${m.content}`
+            ).join('\n')),
+          inputVariables: ["input"]
+        }
+      });
+
+      if (!agent) throw new Error('Failed to initialize AI assistant');
+
+      // Execute agent with enhanced context
+      const result = await agent.invoke({
+        input: aiMessage
+      });
+
+      // Handle tool execution and response formatting
+      let formattedResponse = result.output;
+      // Get the final step from intermediateSteps
+      const steps = result.intermediateSteps || [];
+      const finalStep = steps[steps.length - 1];
+      const action = finalStep?.action;
+      
+      if (action) {
+        const { tool: actionToolName, toolInput, log } = action;
+        
+        try {
+          const tool = tools.find(t => t.name === actionToolName);
+          if (!tool) {
+            console.error('Tool not found:', actionToolName);
+            throw new Error(`Tool ${actionToolName} not found`);
+          }
+
+          // Parse the action input from the log if toolInput is undefined
+          let parsedInput = toolInput;
+          if (!parsedInput && log) {
+            try {
+              const match = log.match(/```\n({[\s\S]*?})\n```/);
+              if (match) {
+                const jsonStr = match[1];
+                const parsed = JSON.parse(jsonStr);
+                parsedInput = parsed.action_input;
+              }
+            } catch (e) {
+              console.error('Failed to parse log:', e);
+            }
+          }
+
+          if (!parsedInput) {
+            throw new Error('No valid tool input found');
+          }
+
+          // Ensure toolInput is properly formatted
+          const processedInput = {
+            ...parsedInput,
+            organizationId,
+            agentId: agentData.agent_id,
+            metadata: {
+              organizationId,
+              agentId: agentData.agent_id,
+              ...(parsedInput.metadata || {})
+            }
+          };
+
+          // Execute the tool with stringified input
+          console.debug('Processed input:', processedInput);
+          const toolResult = await tool.call(JSON.stringify(processedInput));
+          console.debug('Tool execution successful, result:', toolResult);
+          
+          formattedResponse = formatToolResponse(actionToolName, toolResult);
+          console.debug('Formatted response:', formattedResponse);
+
+          // Add assistant message with enhanced metadata
+          const newAssistantMessage: Message = {
+            role: 'assistant',
+            content: formattedResponse || 'I processed your request successfully.',
+            timestamp: new Date(),
+            metadata: {
+              execution_time: Date.now() - userMessage.timestamp.getTime(),
+              entityReferences,
+              thought: finalStep?.action?.log,
+              action: finalStep?.action?.tool,
+              showThought: true
+            }
+          };
+          setMessages(prev => [...prev, newAssistantMessage]);
+
+          // Clear input state
+          setInput('');
+          setSelectedEntities([]);
+          setMentions([]);
+          setMention({
+            isOpen: false,
+            type: 'category',
+            trigger: '',
+            search: '',
+            items: [],
+            position: null
+          });
+
+        } catch (error) {
+          const toolError = error as Error;
+          console.error('Tool execution error:', {
+            name: toolError.name,
+            message: toolError.message,
+            stack: toolError.stack,
+            tool: actionToolName,
+            input: toolInput
+          });
+          throw new Error(`Failed to execute ${actionToolName}: ${toolError.message}`);
+        }
+      }
+
+    } catch (error) {
+      console.error('Error processing message:', error);
+      setError(error instanceof Error ? error.message : 'Failed to process your request. Please try again.');
+    } finally {
+      setIsProcessing(false);
+    }
+  };
+
+  // Complete the render method
   return (
     <Dialog open={isOpen} onOpenChange={onClose}>
       <DialogContent className="sm:max-w-[900px] h-[800px] flex flex-col p-0 gap-0 bg-gradient-to-br from-gray-900 to-indigo-900 text-white overflow-hidden rounded-2xl border border-indigo-500/20">
@@ -1162,15 +1310,15 @@ export function AdminIntelligenceModal({ isOpen, onClose }: Omit<AdminIntelligen
                           "flex items-center gap-1 bg-gradient-to-r p-[1px] rounded-full",
                           {
                             'from-blue-500/20 to-blue-600/20 text-blue-300': entity.type === 'ticket',
-                            'from-green-500/20 to-green-600/20 text-green-300': entity.type === 'agent',
-                            'from-purple-500/20 to-purple-600/20 text-purple-300': entity.type === 'customer'
+                            'from-purple-500/20 to-purple-600/20 text-purple-300': entity.type === 'customer',
+                            'from-amber-500/20 to-amber-600/20 text-amber-300': entity.type === 'article'
                           }
                         )}
                       >
                         <span className="px-2 py-1 bg-gray-900/90 rounded-full flex items-center gap-1">
                           {entity.type === 'ticket' && <RiTicketLine className="w-4 h-4" />}
-                          {entity.type === 'agent' && <RiTeamLine className="w-4 h-4" />}
                           {entity.type === 'customer' && <RiUser3Line className="w-4 h-4" />}
+                          {entity.type === 'article' && <RiArticleLine className="w-4 h-4" />}
                           {entity.label}
                           <button
                             onClick={() => removeEntity(entity.id)}
@@ -1216,12 +1364,12 @@ export function AdminIntelligenceModal({ isOpen, onClose }: Omit<AdminIntelligen
                                   <div
                                     key={item.id}
                                     onClick={() => handleMentionSelect(item)}
-                                    className="flex items-center gap-2 px-2 py-1.5 hover:bg-gray-100 cursor-pointer"
+                                    className="flex items-center gap-2 px-2 py-1.5 hover:bg-gray-800/50 cursor-pointer"
                                   >
                                     {item.type === 'ticket' && <RiTicketLine className="w-4 h-4 text-blue-500" />}
-                                    {item.type === 'agent' && <RiTeamLine className="w-4 h-4 text-green-500" />}
                                     {item.type === 'customer' && <RiUser3Line className="w-4 h-4 text-purple-500" />}
-                                    <span className="text-sm">{item.label}</span>
+                                    {item.type === 'article' && <RiArticleLine className="w-4 h-4 text-amber-500" />}
+                                    <span className="text-sm text-gray-200">{item.label}</span>
                                   </div>
                                 ))}
                               </>
@@ -1236,7 +1384,7 @@ export function AdminIntelligenceModal({ isOpen, onClose }: Omit<AdminIntelligen
                                       e.stopPropagation();
                                       setMention(prev => ({ ...prev, type: 'category' }));
                                     }}
-                                    className="text-xs text-blue-500 hover:text-blue-700"
+                                    className="text-xs text-blue-500 hover:text-blue-400"
                                   >
                                     Back
                                   </button>
@@ -1246,12 +1394,12 @@ export function AdminIntelligenceModal({ isOpen, onClose }: Omit<AdminIntelligen
                                     <div
                                       key={item.id}
                                       onClick={() => handleMentionSelect(item)}
-                                      className="flex items-center gap-2 px-2 py-1.5 hover:bg-gray-100 cursor-pointer"
+                                      className="flex items-center gap-2 px-2 py-1.5 hover:bg-gray-800/50 cursor-pointer"
                                     >
                                       {item.type === 'ticket' && <RiTicketLine className="w-4 h-4 text-blue-500" />}
-                                      {item.type === 'agent' && <RiTeamLine className="w-4 h-4 text-green-500" />}
                                       {item.type === 'customer' && <RiUser3Line className="w-4 h-4 text-purple-500" />}
-                                      <span className="text-sm">{item.label}</span>
+                                      {item.type === 'article' && <RiArticleLine className="w-4 h-4 text-amber-500" />}
+                                      <span className="text-sm text-gray-200">{item.label}</span>
                                     </div>
                                   ))
                                 ) : (
@@ -1293,6 +1441,4 @@ export function AdminIntelligenceModal({ isOpen, onClose }: Omit<AdminIntelligen
       </DialogContent>
     </Dialog>
   );
-} 
-
-
+}

@@ -12,13 +12,17 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useEffect, useState } from "react";
 import { createClientComponentClient } from "@supabase/auth-helpers-nextjs";
+import { AgentIntelligenceButton } from "./sidebar/AgentIntelligenceButton";
+import type { UUID } from 'crypto';
 
 interface AgentProfile {
+  agent_id: UUID;
   name: string;
   organization_name: string;
 }
 
 interface AgentData {
+  agent_id: UUID;
   name: string;
   organizations: {
     name: string;
@@ -63,6 +67,7 @@ export function AgentSidebar() {
       const { data: agentData } = await supabase
         .from('agents')
         .select(`
+          agent_id,
           name,
           organizations (
             name
@@ -73,6 +78,7 @@ export function AgentSidebar() {
 
       if (agentData) {
         setProfile({
+          agent_id: agentData.agent_id,
           name: agentData.name,
           organization_name: agentData.organizations.name,
         });
@@ -125,6 +131,13 @@ export function AgentSidebar() {
               })}
             </ul>
           </li>
+
+          {/* AI Assistant Button */}
+          {profile && (
+            <li className="-mx-2">
+              <AgentIntelligenceButton agentId={profile.agent_id} />
+            </li>
+          )}
         </ul>
       </nav>
     </div>

@@ -1,0 +1,168 @@
+Product Requirements Document (PRD): Calculating Accuracy Metrics for AI Agent in CRM Project  
+Document Owner: [Your Name]  
+Date: [Insert Date]  
+Version: 1.0  
+
+-----------------------------------------------------------------------
+
+1. OBJECTIVE  
+To define a framework for evaluating the accuracy of an AI agent integrated into a CRM system. The agent uses LangSmith for logging/tracing and calls external tools to:  
+1. Retrieve organization/user data.  
+2. Assign support tickets to the correct teams/individuals.  
+3. Generate context-aware responses to user queries.  
+
+Key Success Metrics:  
+- Tool Call Accuracy: Correct tool invocation (e.g., fetching the right data).  
+- Output Accuracy: Correct ticket assignment and responses.  
+- End-to-End Process Reliability: Seamless integration of tool calls and responses.  
+
+-----------------------------------------------------------------------
+
+2. BACKGROUND  
+The AI agent is deployed in a CRM to automate ticket routing, reduce response times, and improve user satisfaction. Performance must be rigorously measured to ensure:  
+- Tools (APIs/databases) are called only when necessary.  
+- Ticket assignments and responses are accurate and actionable.  
+- Errors (e.g., incorrect tool calls, hallucinations) are minimized.  
+
+-----------------------------------------------------------------------
+
+3. SCOPE  
+In Scope:  
+- Metrics for tool-calling decisions.  
+- Metrics for output correctness (ticket assignment, responses).  
+- Integration with LangSmith for tracing/analysis.  
+- Automated evaluation scripts.  
+
+Out of Scope:  
+- Retraining the AI model.  
+- Modifying core CRM tools/APIs.  
+
+-----------------------------------------------------------------------
+
+4. USE CASES  
+| Scenario                                  | Expected Action                          | Tool Called                  |  
+|-------------------------------------------|------------------------------------------|------------------------------|  
+| User asks, “What’s the status of ticket #123?” | Fetch ticket details from CRM DB         | get_ticket_status            |  
+| User says, “Assign this issue to billing.”| Validate team exists, assign ticket      | validate_team, assign_ticket |  
+| User queries account manager for Company X| Fetch org data from CRM                  | get_org_info                 |  
+
+-----------------------------------------------------------------------
+
+5. FUNCTIONAL REQUIREMENTS  
+
+5.1 Data Collection  
+- Ground Truth Dataset:  
+  - 500+ labeled input queries with:  
+    - Expected tool calls (if any).  
+    - Expected outputs (e.g., ticket assignments, responses).  
+  - Example row:  
+    {  
+      "input": "Assign ticket #456 to onboarding team",  
+      "expected_tools": ["validate_team", "assign_ticket"],  
+      "expected_output": "Ticket #456 assigned to Onboarding Team (ID: 789)."  
+    }  
+
+- LangSmith Logs: Trace all tool calls, inputs, and outputs.  
+
+5.2 Evaluation Metrics  
+| Metric                | Description                              | Formula                      |  
+|-----------------------|------------------------------------------|------------------------------|  
+| Tool Call Accuracy    | % of correct tool invocations           | Correct Tool Calls / Total   |  
+| Output Accuracy       | % of correct final outputs              | Correct Outputs / Total      |  
+| End-to-End Accuracy   | % of fully correct processes            | Correct End-to-End / Total   |  
+| Precision/Recall      | Tradeoff in tool call decisions         | Precision = TP/(TP+FP), Recall = TP/(TP+FN) |  
+| Latency               | Time from query to final output         | Average response time (ms)   |  
+
+5.3 Automated Evaluation  
+- Scripts to Compare:  
+  - Predicted tool calls vs. ground truth.  
+  - Predicted outputs vs. ground truth (exact match, similarity scores).  
+
+- LangSmith Integration:  
+  - Log traces with metadata (e.g., ticket_id, tool_used, output).  
+  - Use LangSmith datasets for batch evaluations.  
+
+-----------------------------------------------------------------------
+
+6. NON-FUNCTIONAL REQUIREMENTS  
+- Scalability: Handle 1,000+ queries/hour for evaluation.  
+- Privacy: Anonymize CRM data in evaluation logs.  
+- Reproducibility: Consistent evaluation results across runs.  
+
+-----------------------------------------------------------------------
+
+7. IMPLEMENTATION STEPS  
+
+7.1 Dataset Preparation  
+- Build ground truth dataset from CRM historical data.  
+- Label each query with expected_tools and expected_output.  
+
+7.2 LangSmith Configuration  
+- Initialize LangSmith project for CRM AI agent.  
+- Add metadata to traces (example Python code):  
+
+from langsmith import trace  
+@trace  
+def assign_ticket(ticket_id, team_id):  
+    # CRM logic  
+    return {"status": "assigned", "assigned_to": team_id}  
+
+7.3 Evaluation Script (Python Pseudocode)  
+from langsmith.evaluation import evaluate  
+import datasets  
+
+def check_tool_call(prediction, ground_truth):  
+    return prediction["tools"] == ground_truth["expected_tools"]  
+
+def check_output(prediction, ground_truth):  
+    return prediction["output"] == ground_truth["expected_output"]  
+
+dataset = datasets.load_dataset("crm_ground_truth")  
+results = evaluate(dataset=dataset, metrics=[check_tool_call, check_output], project_name="crm-ai-agent")  
+
+7.4 Reporting  
+- LangSmith dashboards for:  
+  - Tool call accuracy per tool.  
+  - Confusion matrix for incorrect tool calls.  
+  - Failure examples (e.g., wrong ticket assigned).  
+
+-----------------------------------------------------------------------
+
+8. DEPENDENCIES  
+1. Access to CRM APIs/databases.  
+2. LangSmith API keys and project setup.  
+3. Labeled ground truth dataset (historical CRM interactions).  
+
+-----------------------------------------------------------------------
+
+9. RISKS & MITIGATIONS  
+| Risk                        | Mitigation                               |  
+|-----------------------------|------------------------------------------|  
+| Poor-quality ground truth   | Manually audit 10% of labels.            |  
+| Tool integration errors     | Mock tools for testing.                  |  
+| Overfitting to evaluation   | Use separate validation/test datasets.   |  
+
+-----------------------------------------------------------------------
+
+10. TIMELINE  
+| Phase                       | Timeline    |  
+|-----------------------------|-------------|  
+| Dataset preparation          | Week 1      |  
+| LangSmith setup & mocking    | Week 2      |  
+| Evaluation script development| Week 3      |  
+| Testing & iteration          | Week 4      |  
+| Final deployment             | Week 5      |  
+
+-----------------------------------------------------------------------
+
+11. ACCEPTANCE CRITERIA  
+1. Tool call accuracy ≥ 90%.  
+2. Output accuracy ≥ 85%.  
+3. End-to-end accuracy ≥ 80%.  
+4. Evaluation scripts run reproducibly in LangSmith.  
+
+-----------------------------------------------------------------------
+
+NEXT STEPS  
+- Share PRD with Cursor AI agent for implementation.  
+- Schedule stakeholder review for ground truth dataset.
